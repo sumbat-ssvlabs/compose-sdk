@@ -2,7 +2,7 @@
   <img src="https://ssv.network/wp-content/uploads/2024/06/full_logo_white.svg" alt="SSV Network" width="300"/>
 </p>
 
-<h1 align="center">SSV SDK</h1>
+<h1 align="center">Compose SDK</h1>
 
 <p align="center">
   <a href="https://codecov.io/gh/ssvlabs/ssv-sdk">
@@ -14,7 +14,7 @@
 
 ## Overview
 
-The SSV SDK is a TypeScript library for interacting with the SSV network, enabling distributed validator operations on Ethereum.
+The Compose SDK is a TypeScript library for interacting with the SSV network, enabling distributed validator operations on Ethereum.
 
 ## Core Modules
 
