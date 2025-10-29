@@ -44,7 +44,6 @@
     "release": "release-it",
     "commit": "git-cz",
     "lint-staged": "pnpm run type-check && pnpm vitest run && lint-staged",
-    "prepare": "pnpm build"
   },
   "lint-staged": {
     "src/**/*.{ts,tsx,js,json}": [
