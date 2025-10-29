@@ -35,7 +35,7 @@ export const hoodi = defineChain({
 });
 
 export const rollupA = defineChain({
-  id: 77777,
+  id: 11113,
   name: 'Rollup A',
   nativeCurrency: {
     name: 'Ethereum',
@@ -44,13 +44,13 @@ export const rollupA = defineChain({
   },
   rpcUrls: {
     default: {
-      http: ['https://rollup-rpc-1.stage.ops.ssvlabsinternal.com']
+      http: ['https://rpc-a.testnet.compose.network']
     }
   },
   blockExplorers: {
     default: {
       name: 'Rollup A',
-      url: 'https://blockscout-rollup-1.stage.ops.ssvlabsinternal.com/'
+      url: 'https://rollup-a.explorer.testnet.compose.network'
     }
   },
   iconBackground: 'none',
@@ -59,7 +59,7 @@ export const rollupA = defineChain({
 });
 
 export const rollupB = defineChain({
-  id: 88888,
+  id: 22224,
   name: 'Rollup B',
   nativeCurrency: {
     name: 'Ethereum',
@@ -68,13 +68,13 @@ export const rollupB = defineChain({
   },
   rpcUrls: {
     default: {
-      http: ['https://rollup-rpc-2.stage.ops.ssvlabsinternal.com']
+      http: ['https://rpc-b.testnet.compose.network']
     }
   },
   blockExplorers: {
     default: {
       name: 'Rollup B',
-      url: 'https://blockscout-rollup-2.stage.ops.ssvlabsinternal.com/'
+      url: 'https://rollup-b.explorer.testnet.compose.network'
     }
   },
   iconBackground: 'none',

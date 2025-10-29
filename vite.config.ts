@@ -1,15 +1,13 @@
-import { resolve } from 'path'
-import { defineConfig } from 'vite'
-import dts from 'vite-plugin-dts'
+import { resolve } from 'path';
+import { defineConfig } from 'vite';
+import dts from 'vite-plugin-dts';
 
 export default defineConfig({
-  plugins: [
-    dts({ include: ['src/**/*.ts'], exclude: ['src/**/*.spec.ts', 'src/**/*.test.ts'] }),
-  ],
+  plugins: [dts({ include: ['src/**/*.ts'], exclude: ['src/**/*.spec.ts', 'src/**/*.test.ts', 'src/**/*.test.tsx'] })],
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src'),
-    },
+      '@': resolve(__dirname, 'src')
+    }
   },
 
   build: {
@@ -19,9 +17,9 @@ export default defineConfig({
       entry: {
         main: resolve(__dirname, 'src/main.ts'),
         utils: resolve(__dirname, 'src/utils/index.ts'),
-        keys: resolve(__dirname, 'src/libs/ssv-keys/index.ts'),
+        keys: resolve(__dirname, 'src/libs/ssv-keys/index.ts')
       },
-      formats: ['es', 'cjs'],
+      formats: ['es', 'cjs']
     },
     rollupOptions: {
       external: [
@@ -41,12 +39,12 @@ export default defineConfig({
         'util',
         'stream',
         'buffer',
-        'os',
-      ],
+        'os'
+      ]
     },
-    outDir: 'dist',
+    outDir: 'dist'
   },
   optimizeDeps: {
-    include: ['src/graphql/graphql.ts'],
-  },
-})
+    include: ['src/graphql/graphql.ts']
+  }
+});

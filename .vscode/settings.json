@@ -24,13 +24,16 @@
     "abitype",
     "bigintify",
     "daovalues",
+    "hexify",
     "holesky",
     "hoodi",
     "keyshares",
     "multichain",
+    "Rollups",
     "SSVAPI",
     "SSVSDK",
-    "viem"
+    "viem",
+    "wagmi"
   ],
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": "explicit",
