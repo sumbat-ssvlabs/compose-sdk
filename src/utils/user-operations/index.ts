@@ -1,7 +1,7 @@
-import type { ConfigReturnTyp } from '@/config';
-import type { ComposedSignedUserOpsTxReturnType, toRpcUserOpCanonical } from '@/lib/smart-account/user-op';
+import { getPaymasterDataForChain } from '@/api/paymaster';
+import type { ComposeConfigReturnType } from '@/config/create';
 import type { CreateKernelAccountReturnType } from '@zerodev/sdk';
-import { type Address, createPublicClient, type Hex, rpcSchema } from 'viem';
+import { type Address, type Hex } from 'viem';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { GetPaymasterDataParameters, PaymasterActions } from 'viem/account-abstraction';
@@ -24,7 +24,10 @@ type CreateUserOpParams = {
   calls: Call[];
 };
 
-export const createUserOp = async ({ account, chainId, calls }: CreateUserOpParams, config: ConfigReturnTyp) => {
+export const createUserOp = async (
+  { account, chainId, calls }: CreateUserOpParams,
+  config: ComposeConfigReturnType
+) => {
   const publicClient = config.getPublicClient(chainId);
   if (!publicClient) {
     throw new Error(`Public client not found for chain ${chainId}`);
@@ -40,8 +43,11 @@ export const createUserOp = async ({ account, chainId, calls }: CreateUserOpPara
           value: call.value
         })
         .then(withMargin)
-        .catch((error) => {
-          console.warn(`Gas estimation failed for call to ${call.to}, falling back`, error);
+        .catch((error: Error) => {
+          console.warn(
+            `Gas estimation failed for call to ${call.to}, falling back`,
+            'message' in error ? error.message : 'Unknown error'
+          );
           return FALLBACK_CALL_GAS_LIMIT;
         })
     )
@@ -59,14 +65,24 @@ export const createUserOp = async ({ account, chainId, calls }: CreateUserOpPara
   // Estimate fees per gas
   const gasEstimate = await publicClient.estimateFeesPerGas();
 
-  const paymaster: PaymasterActions = {
-    getPaymasterData: (parameters: GetPaymasterDataParameters) => {
-      return getPaymasterDataForChain(parameters, 'pm_sponsorUserOperation');
-    },
-    getPaymasterStubData: (parameters: GetPaymasterDataParameters) => {
-      return getPaymasterDataForChain(parameters, 'pm_getPaymasterStubData');
-    }
-  };
+  const paymaster: PaymasterActions | undefined = config.hasPaymaster
+    ? {
+        getPaymasterData: (parameters: GetPaymasterDataParameters) => {
+          return getPaymasterDataForChain({
+            params: parameters,
+            method: 'pm_sponsorUserOperation',
+            getPaymasterEndpoint: config.getPaymasterEndpoint!
+          });
+        },
+        getPaymasterStubData: (parameters: GetPaymasterDataParameters) => {
+          return getPaymasterDataForChain({
+            params: parameters,
+            method: 'pm_getPaymasterStubData',
+            getPaymasterEndpoint: config.getPaymasterEndpoint!
+          });
+        }
+      }
+    : undefined;
 
   const callData = await account.encodeCalls(calls);
 
@@ -81,43 +97,4 @@ export const createUserOp = async ({ account, chainId, calls }: CreateUserOpPara
     maxPriorityFeePerGas: gasEstimate.maxPriorityFeePerGas!,
     paymaster
   };
-};
-
-type ComposeRpcSchema = [
-  {
-    Method: 'eth_sendXTransaction';
-    Parameters: [string];
-    ReturnType: null;
-  },
-  {
-    Method: 'compose_buildSignedUserOpsTx';
-    Parameters: [ReturnType<typeof toRpcUserOpCanonical>[], { chainId: number }];
-    ReturnType: ComposedSignedUserOpsTxReturnType;
-  }
-];
-
-/**
- * Creates public clients for both rollup A and rollup B chains with Compose RPC schema support.
- *
- * @returns {[PublicClient, PublicClient]} A tuple where the first element is the rollupA public client
- * and the second element is the rollupB public client. Both clients are configured with
- * custom RPC methods for cross-chain user operation handling.
- */
-export const createRollupPublicClients = (
-  sourceChainId: keyof typeof chainsMap = rollupA.id,
-  destChainId: keyof typeof chainsMap = rollupB.id
-) => {
-  const rollupAPublicClient = createPublicClient({
-    chain: chainsMap[sourceChainId],
-    transport: http(chainsMap[sourceChainId].rpcUrls.default.http[0]),
-    rpcSchema: rpcSchema<ComposeRpcSchema>()
-  });
-
-  const rollupBPublicClient = createPublicClient({
-    chain: chainsMap[destChainId],
-    transport: http(chainsMap[destChainId].rpcUrls.default.http[0]),
-    rpcSchema: rpcSchema<ComposeRpcSchema>()
-  });
-
-  return [rollupAPublicClient, rollupBPublicClient];
 };

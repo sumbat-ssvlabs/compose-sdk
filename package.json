@@ -21,12 +21,21 @@
       "import": "./dist/main.mjs",
       "require": "./dist/main.js",
       "types": "./dist/main.d.ts"
+    },
+    "./react": {
+      "import": "./dist/react.mjs",
+      "require": "./dist/react.js",
+      "types": "./dist/react.d.ts"
+    },
+    "./utils": {
+      "import": "./dist/utils.mjs",
+      "require": "./dist/utils.js",
+      "types": "./dist/utils.d.ts"
     }
   },
   "scripts": {
     "lint": "eslint . --ext .ts --fix",
     "build": "vite build",
-    "codegen": "graphql-codegen",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
     "v-pub-tarball": "npm publish --dry-run",
@@ -34,7 +43,8 @@
     "type:perf": "tsc --extendedDiagnostics",
     "release": "release-it",
     "commit": "git-cz",
-    "lint-staged": "pnpm run type-check && pnpm vitest run && lint-staged"
+    "lint-staged": "pnpm run type-check && pnpm vitest run && lint-staged",
+    "prepare": "pnpm build"
   },
   "lint-staged": {
     "src/**/*.{ts,tsx,js,json}": [
@@ -134,6 +144,7 @@
     "graphql-request": "^7.2.0",
     "lodash-es": "^4.17.21",
     "node-forge": "^1.3.1",
+    "protobufjs": "^7.5.4",
     "scrypt-js": "^3.0.1",
     "tslib": "^2.8.1",
     "viem": "^2.38.4",

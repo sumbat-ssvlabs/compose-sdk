@@ -2,18 +2,7 @@
 
 import type { Config } from '@wagmi/core';
 import { getPublicClient } from '@wagmi/core';
-
-export type ConfigReturnType = {
-  getPaymasterEndpoint: (args: {
-    method: 'pm_getPaymasterStubData' | 'pm_getPaymasterData' | 'pm_sponsorUserOperation';
-    chainId: number;
-  }) => string | undefined;
-  getPublicClient: (chainId: number) => any;
-};
-
-export const isConfig = (props: unknown): props is ConfigReturnType => {
-  return typeof props === 'object';
-};
+import type { PublicClient } from 'viem';
 
 type PaymasterEndpointArgs<TConfig extends Config> = {
   method: 'pm_getPaymasterStubData' | 'pm_getPaymasterData' | 'pm_sponsorUserOperation';
@@ -33,8 +22,9 @@ type ComposeConfigArgs<TConfig extends Config> = {
   accountAbstractionContracts?: Record<TConfig['chains'][number]['id'], AccountAbstractionContracts>;
 };
 
-export type ComposeConfigReturnType<TConfig extends Config> = {
-  getPublicClient: (chainId: TConfig['chains'][number]['id']) => ReturnType<typeof getPublicClient>;
+export type ComposeConfigReturnType<TConfig extends Config = Config> = {
+  getPublicClient: (chainId: TConfig['chains'][number]['id']) => PublicClient;
+  hasPaymaster: boolean;
 } & Pick<ComposeConfigArgs<TConfig>, 'getPaymasterEndpoint' | 'accountAbstractionContracts'>;
 
 export function createComposeConfig<TConfig extends Config>(
@@ -42,7 +32,8 @@ export function createComposeConfig<TConfig extends Config>(
 ): ComposeConfigReturnType<TConfig> {
   return {
     getPaymasterEndpoint: props.getPaymasterEndpoint,
-    getPublicClient: (chainId) => getPublicClient(props.wagmi, { chainId }),
-    accountAbstractionContracts: props.accountAbstractionContracts
+    getPublicClient: (chainId) => getPublicClient(props.wagmi, { chainId }) as PublicClient,
+    accountAbstractionContracts: props.accountAbstractionContracts,
+    hasPaymaster: Boolean(props.getPaymasterEndpoint)
   };
 }
