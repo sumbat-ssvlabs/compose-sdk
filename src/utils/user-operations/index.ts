@@ -18,20 +18,19 @@ type Call = {
   data: Hex;
 };
 
-type CreateUserOpParams = {
-  account: CreateKernelAccountReturnType<'0.7'>;
-  chainId: number;
-  calls: Call[];
-};
-
-export const createUserOp = async (
-  { account, chainId, calls }: CreateUserOpParams,
-  config: ComposeConfigReturnType
+export const createUserOps = async (
+  config: ComposeConfigReturnType,
+  account: CreateKernelAccountReturnType<'0.7'>,
+  calls: Call[]
 ) => {
+  const chainId = account.client.chain!.id;
+
   const publicClient = config.getPublicClient(chainId);
   if (!publicClient) {
     throw new Error(`Public client not found for chain ${chainId}`);
   }
+
+  account.client.chain?.id;
   // Estimate gas for each call
   const callGasEstimates = await Promise.all(
     calls.map((call) =>
@@ -98,3 +97,36 @@ export const createUserOp = async (
     paymaster
   };
 };
+
+export type UserOps = Awaited<ReturnType<typeof createUserOps>>;
+
+// type SendUserOpsParams = {
+//   operations: {
+//     account: CreateKernelAccountReturnType<'0.7'>;
+//     publicClient: PublicClient<Transport, Chain, Account, ComposeRpcSchema>;
+//     userOps: UserOps;
+//   }[];
+// };
+// export const sendUserOps = async ({ operations }: SendUserOpsParams) => {
+//   const signedOps = (
+//     await prepareAndSignUserOperations(
+//       operations.map((operation) => operation.account.client),
+//       operations.map((operation) => operation.userOps)
+//     )
+//   ).map(toRpcUserOpCanonical);
+
+//   const builds = await Promise.all(
+//     operations.map((operation, index) =>
+//       operation.publicClient.request({
+//         method: 'compose_buildSignedUserOpsTx',
+//         params: [signedOps[index], { chainId: operation.chainId }]
+//       })
+//     )
+//   );
+
+//   const explorerUrls = operations.map((operation, index) =>
+//     new URL(`tx/${builds[index].hash}`, operation.publicClient.chain.blockExplorers?.default?.url).toString()
+//   );
+
+//   return txs;
+// };

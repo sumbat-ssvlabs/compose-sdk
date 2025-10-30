@@ -1,5 +1,5 @@
 import type { ComposeConfigReturnType } from '@/config/create';
-import { ComposeProvider, useCompose } from '@/libs/react';
+import { ComposeProvider, useComposeConfig } from '@/libs/react';
 import { renderHook } from '@testing-library/react';
 import type { Config } from '@wagmi/core';
 import { describe, expect, it, vi } from 'vitest';
@@ -8,7 +8,7 @@ describe('useCompose', () => {
   it('should return compose config when used via renderHook', () => {
     const config = {} as ComposeConfigReturnType<Config>;
 
-    const { result } = renderHook(() => useCompose(), {
+    const { result } = renderHook(() => useComposeConfig(), {
       wrapper: ({ children }) => <ComposeProvider config={config} children={children} />
     });
 
@@ -19,7 +19,7 @@ describe('useCompose', () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     try {
-      expect(() => renderHook(() => useCompose())).toThrow('useCompose must be used within a ComposeProvider');
+      expect(() => renderHook(() => useComposeConfig())).toThrow('useCompose must be used within a ComposeProvider');
     } finally {
       consoleErrorSpy.mockRestore();
     }

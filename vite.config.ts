@@ -7,7 +7,10 @@ export default defineConfig({
     dts({
       include: ['src/**/*.ts', 'src/**/*.tsx'],
       exclude: ['src/**/*.spec.ts', 'src/**/*.test.ts', 'src/**/*.test.tsx'],
-      rollupTypes: true
+      rollupTypes: true,
+      outDir: 'dist',
+      entryRoot: 'src',
+      tsconfigPath: './tsconfig.json'
     })
   ],
   resolve: {
@@ -21,36 +24,33 @@ export default defineConfig({
     minify: false,
     lib: {
       entry: {
-        main: resolve(__dirname, 'src/config/index.ts'),
-        react: resolve(__dirname, 'src/libs/react/index.ts'),
-        utils: resolve(__dirname, 'src/utils/index.ts')
+        main: resolve(__dirname, 'src/main.ts'),
+        react: resolve(__dirname, 'src/libs/react/index.ts')
       },
       formats: ['es', 'cjs']
     },
     rollupOptions: {
       external: [
+        'react',
+        'react-dom',
+        'react/jsx-runtime',
+        'wagmi',
+        '@wagmi/core',
+        '@tanstack/react-query',
         'viem',
-        'abitype',
-        'bls-eth-wasm',
-        'class-validator',
-        'dotenv',
-        'graphql-request',
-        'lodash-es',
-        'tslib',
-        'zod',
-        'fs',
-        'path',
-        'crypto',
-        'url',
-        'util',
-        'stream',
-        'buffer',
-        'os'
+      ],
+      output: [
+        {
+          format: 'es',
+          entryFileNames: '[name].mjs'
+        },
+        {
+          format: 'cjs',
+          entryFileNames: '[name].js'
+        }
       ]
     },
     outDir: 'dist'
   },
-  optimizeDeps: {
-    include: ['src/graphql/graphql.ts']
-  }
+
 });

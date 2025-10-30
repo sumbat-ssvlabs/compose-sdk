@@ -19,7 +19,7 @@ type AccountAbstractionContracts = {
 type ComposeConfigArgs<TConfig extends Config> = {
   wagmi: TConfig;
   getPaymasterEndpoint?: (args: PaymasterEndpointArgs<TConfig>) => string;
-  accountAbstractionContracts?: Record<TConfig['chains'][number]['id'], AccountAbstractionContracts>;
+  accountAbstractionContracts: Partial<Record<TConfig['chains'][number]['id'], AccountAbstractionContracts>>;
 };
 
 export type ComposeConfigReturnType<TConfig extends Config = Config> = {

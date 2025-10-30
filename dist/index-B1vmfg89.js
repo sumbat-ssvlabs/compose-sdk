@@ -1,149 +1,1466 @@
 "use strict";
-Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
-const lodashEs = require("lodash-es");
 const viem = require("viem");
+const version = "2.38.4";
+let errorConfig = {
+  getDocsUrl: ({ docsBaseUrl, docsPath = "", docsSlug }) => docsPath ? `${docsBaseUrl ?? "https://viem.sh"}${docsPath}${docsSlug ? `#${docsSlug}` : ""}` : void 0,
+  version: `viem@${version}`
+};
+class BaseError extends Error {
+  constructor(shortMessage, args = {}) {
+    const details = (() => {
+      if (args.cause instanceof BaseError)
+        return args.cause.details;
+      if (args.cause?.message)
+        return args.cause.message;
+      return args.details;
+    })();
+    const docsPath = (() => {
+      if (args.cause instanceof BaseError)
+        return args.cause.docsPath || args.docsPath;
+      return args.docsPath;
+    })();
+    const docsUrl = errorConfig.getDocsUrl?.({ ...args, docsPath });
+    const message2 = [
+      shortMessage || "An error occurred.",
+      "",
+      ...args.metaMessages ? [...args.metaMessages, ""] : [],
+      ...docsUrl ? [`Docs: ${docsUrl}`] : [],
+      ...details ? [`Details: ${details}`] : [],
+      ...errorConfig.version ? [`Version: ${errorConfig.version}`] : []
+    ].join("\n");
+    super(message2, args.cause ? { cause: args.cause } : void 0);
+    Object.defineProperty(this, "details", {
+      enumerable: true,
+      configurable: true,
+      writable: true,
+      value: void 0
+    });
+    Object.defineProperty(this, "docsPath", {
+      enumerable: true,
+      configurable: true,
+      writable: true,
+      value: void 0
+    });
+    Object.defineProperty(this, "metaMessages", {
+      enumerable: true,
+      configurable: true,
+      writable: true,
+      value: void 0
+    });
+    Object.defineProperty(this, "shortMessage", {
+      enumerable: true,
+      configurable: true,
+      writable: true,
+      value: void 0
+    });
+    Object.defineProperty(this, "version", {
+      enumerable: true,
+      configurable: true,
+      writable: true,
+      value: void 0
+    });
+    Object.defineProperty(this, "name", {
+      enumerable: true,
+      configurable: true,
+      writable: true,
+      value: "BaseError"
+    });
+    this.details = details;
+    this.docsPath = docsPath;
+    this.metaMessages = args.metaMessages;
+    this.name = args.name ?? this.name;
+    this.shortMessage = shortMessage;
+    this.version = version;
+  }
+  walk(fn) {
+    return walk(this, fn);
+  }
+}
+function walk(err, fn) {
+  if (fn?.(err))
+    return err;
+  if (err && typeof err === "object" && "cause" in err && err.cause !== void 0)
+    return walk(err.cause, fn);
+  return fn ? null : err;
+}
+class IntegerOutOfRangeError extends BaseError {
+  constructor({ max, min, signed, size: size2, value }) {
+    super(`Number "${value}" is not in safe ${size2 ? `${size2 * 8}-bit ${signed ? "signed" : "unsigned"} ` : ""}integer range ${max ? `(${min} to ${max})` : `(above ${min})`}`, { name: "IntegerOutOfRangeError" });
+  }
+}
+class InvalidBytesBooleanError extends BaseError {
+  constructor(bytes) {
+    super(`Bytes value "${bytes}" is not a valid boolean. The bytes array must contain a single byte of either a 0 or 1 value.`, {
+      name: "InvalidBytesBooleanError"
+    });
+  }
+}
+class SizeOverflowError extends BaseError {
+  constructor({ givenSize, maxSize }) {
+    super(`Size cannot exceed ${maxSize} bytes. Given size: ${givenSize} bytes.`, { name: "SizeOverflowError" });
+  }
+}
+function isHex(value, { strict = true } = {}) {
+  if (!value)
+    return false;
+  if (typeof value !== "string")
+    return false;
+  return strict ? /^0x[0-9a-fA-F]*$/.test(value) : value.startsWith("0x");
+}
+function size(value) {
+  if (isHex(value, { strict: false }))
+    return Math.ceil((value.length - 2) / 2);
+  return value.length;
+}
+function trim$1(hexOrBytes, { dir = "left" } = {}) {
+  let data = typeof hexOrBytes === "string" ? hexOrBytes.replace("0x", "") : hexOrBytes;
+  let sliceLength = 0;
+  for (let i = 0; i < data.length - 1; i++) {
+    if (data[dir === "left" ? i : data.length - i - 1].toString() === "0")
+      sliceLength++;
+    else
+      break;
+  }
+  data = dir === "left" ? data.slice(sliceLength) : data.slice(0, data.length - sliceLength);
+  if (typeof hexOrBytes === "string") {
+    if (data.length === 1 && dir === "right")
+      data = `${data}0`;
+    return `0x${data.length % 2 === 1 ? `0${data}` : data}`;
+  }
+  return data;
+}
+class SliceOffsetOutOfBoundsError extends BaseError {
+  constructor({ offset, position, size: size2 }) {
+    super(`Slice ${position === "start" ? "starting" : "ending"} at offset "${offset}" is out-of-bounds (size: ${size2}).`, { name: "SliceOffsetOutOfBoundsError" });
+  }
+}
+class SizeExceedsPaddingSizeError extends BaseError {
+  constructor({ size: size2, targetSize, type: type2 }) {
+    super(`${type2.charAt(0).toUpperCase()}${type2.slice(1).toLowerCase()} size (${size2}) exceeds padding size (${targetSize}).`, { name: "SizeExceedsPaddingSizeError" });
+  }
+}
+class InvalidBytesLengthError extends BaseError {
+  constructor({ size: size2, targetSize, type: type2 }) {
+    super(`${type2.charAt(0).toUpperCase()}${type2.slice(1).toLowerCase()} is expected to be ${targetSize} ${type2} long, but is ${size2} ${type2} long.`, { name: "InvalidBytesLengthError" });
+  }
+}
+function pad(hexOrBytes, { dir, size: size2 = 32 } = {}) {
+  if (typeof hexOrBytes === "string")
+    return padHex(hexOrBytes, { dir, size: size2 });
+  return padBytes(hexOrBytes, { dir, size: size2 });
+}
+function padHex(hex_, { dir, size: size2 = 32 } = {}) {
+  if (size2 === null)
+    return hex_;
+  const hex = hex_.replace("0x", "");
+  if (hex.length > size2 * 2)
+    throw new SizeExceedsPaddingSizeError({
+      size: Math.ceil(hex.length / 2),
+      targetSize: size2,
+      type: "hex"
+    });
+  return `0x${hex[dir === "right" ? "padEnd" : "padStart"](size2 * 2, "0")}`;
+}
+function padBytes(bytes, { dir, size: size2 = 32 } = {}) {
+  if (size2 === null)
+    return bytes;
+  if (bytes.length > size2)
+    throw new SizeExceedsPaddingSizeError({
+      size: bytes.length,
+      targetSize: size2,
+      type: "bytes"
+    });
+  const paddedBytes = new Uint8Array(size2);
+  for (let i = 0; i < size2; i++) {
+    const padEnd = dir === "right";
+    paddedBytes[padEnd ? i : size2 - i - 1] = bytes[padEnd ? i : bytes.length - i - 1];
+  }
+  return paddedBytes;
+}
+const hexes = /* @__PURE__ */ Array.from({ length: 256 }, (_v, i) => i.toString(16).padStart(2, "0"));
+function toHex(value, opts = {}) {
+  if (typeof value === "number" || typeof value === "bigint")
+    return numberToHex(value, opts);
+  if (typeof value === "string") {
+    return stringToHex(value, opts);
+  }
+  if (typeof value === "boolean")
+    return boolToHex(value, opts);
+  return bytesToHex$1(value, opts);
+}
+function boolToHex(value, opts = {}) {
+  const hex = `0x${Number(value)}`;
+  if (typeof opts.size === "number") {
+    assertSize(hex, { size: opts.size });
+    return pad(hex, { size: opts.size });
+  }
+  return hex;
+}
+function bytesToHex$1(value, opts = {}) {
+  let string = "";
+  for (let i = 0; i < value.length; i++) {
+    string += hexes[value[i]];
+  }
+  const hex = `0x${string}`;
+  if (typeof opts.size === "number") {
+    assertSize(hex, { size: opts.size });
+    return pad(hex, { dir: "right", size: opts.size });
+  }
+  return hex;
+}
+function numberToHex(value_, opts = {}) {
+  const { signed, size: size2 } = opts;
+  const value = BigInt(value_);
+  let maxValue;
+  if (size2) {
+    if (signed)
+      maxValue = (1n << BigInt(size2) * 8n - 1n) - 1n;
+    else
+      maxValue = 2n ** (BigInt(size2) * 8n) - 1n;
+  } else if (typeof value_ === "number") {
+    maxValue = BigInt(Number.MAX_SAFE_INTEGER);
+  }
+  const minValue = typeof maxValue === "bigint" && signed ? -maxValue - 1n : 0;
+  if (maxValue && value > maxValue || value < minValue) {
+    const suffix = typeof value_ === "bigint" ? "n" : "";
+    throw new IntegerOutOfRangeError({
+      max: maxValue ? `${maxValue}${suffix}` : void 0,
+      min: `${minValue}${suffix}`,
+      signed,
+      size: size2,
+      value: `${value_}${suffix}`
+    });
+  }
+  const hex = `0x${(signed && value < 0 ? (1n << BigInt(size2 * 8)) + BigInt(value) : value).toString(16)}`;
+  if (size2)
+    return pad(hex, { size: size2 });
+  return hex;
+}
+const encoder$1 = /* @__PURE__ */ new TextEncoder();
+function stringToHex(value_, opts = {}) {
+  const value = encoder$1.encode(value_);
+  return bytesToHex$1(value, opts);
+}
+const encoder = /* @__PURE__ */ new TextEncoder();
+function toBytes$1(value, opts = {}) {
+  if (typeof value === "number" || typeof value === "bigint")
+    return numberToBytes(value, opts);
+  if (typeof value === "boolean")
+    return boolToBytes(value, opts);
+  if (isHex(value))
+    return hexToBytes(value, opts);
+  return stringToBytes(value, opts);
+}
+function boolToBytes(value, opts = {}) {
+  const bytes = new Uint8Array(1);
+  bytes[0] = Number(value);
+  if (typeof opts.size === "number") {
+    assertSize(bytes, { size: opts.size });
+    return pad(bytes, { size: opts.size });
+  }
+  return bytes;
+}
+const charCodeMap = {
+  zero: 48,
+  nine: 57,
+  A: 65,
+  F: 70,
+  a: 97,
+  f: 102
+};
+function charCodeToBase16(char) {
+  if (char >= charCodeMap.zero && char <= charCodeMap.nine)
+    return char - charCodeMap.zero;
+  if (char >= charCodeMap.A && char <= charCodeMap.F)
+    return char - (charCodeMap.A - 10);
+  if (char >= charCodeMap.a && char <= charCodeMap.f)
+    return char - (charCodeMap.a - 10);
+  return void 0;
+}
+function hexToBytes(hex_, opts = {}) {
+  let hex = hex_;
+  if (opts.size) {
+    assertSize(hex, { size: opts.size });
+    hex = pad(hex, { dir: "right", size: opts.size });
+  }
+  let hexString = hex.slice(2);
+  if (hexString.length % 2)
+    hexString = `0${hexString}`;
+  const length = hexString.length / 2;
+  const bytes = new Uint8Array(length);
+  for (let index = 0, j = 0; index < length; index++) {
+    const nibbleLeft = charCodeToBase16(hexString.charCodeAt(j++));
+    const nibbleRight = charCodeToBase16(hexString.charCodeAt(j++));
+    if (nibbleLeft === void 0 || nibbleRight === void 0) {
+      throw new BaseError(`Invalid byte sequence ("${hexString[j - 2]}${hexString[j - 1]}" in "${hexString}").`);
+    }
+    bytes[index] = nibbleLeft * 16 + nibbleRight;
+  }
+  return bytes;
+}
+function numberToBytes(value, opts) {
+  const hex = numberToHex(value, opts);
+  return hexToBytes(hex);
+}
+function stringToBytes(value, opts = {}) {
+  const bytes = encoder.encode(value);
+  if (typeof opts.size === "number") {
+    assertSize(bytes, { size: opts.size });
+    return pad(bytes, { dir: "right", size: opts.size });
+  }
+  return bytes;
+}
+function assertSize(hexOrBytes, { size: size$1 }) {
+  if (size(hexOrBytes) > size$1)
+    throw new SizeOverflowError({
+      givenSize: size(hexOrBytes),
+      maxSize: size$1
+    });
+}
+function hexToBigInt(hex, opts = {}) {
+  const { signed } = opts;
+  if (opts.size)
+    assertSize(hex, { size: opts.size });
+  const value = BigInt(hex);
+  if (!signed)
+    return value;
+  const size2 = (hex.length - 2) / 2;
+  const max = (1n << BigInt(size2) * 8n - 1n) - 1n;
+  if (value <= max)
+    return value;
+  return value - BigInt(`0x${"f".padStart(size2 * 2, "f")}`) - 1n;
+}
+function hexToNumber(hex, opts = {}) {
+  return Number(hexToBigInt(hex, opts));
+}
+const maxUint256 = 2n ** 256n - 1n;
+function concat(values) {
+  if (typeof values[0] === "string")
+    return concatHex(values);
+  return concatBytes$1(values);
+}
+function concatBytes$1(values) {
+  let length = 0;
+  for (const arr of values) {
+    length += arr.length;
+  }
+  const result = new Uint8Array(length);
+  let offset = 0;
+  for (const arr of values) {
+    result.set(arr, offset);
+    offset += arr.length;
+  }
+  return result;
+}
+function concatHex(values) {
+  return `0x${values.reduce((acc, x) => acc + x.replace("0x", ""), "")}`;
+}
+class NegativeOffsetError extends BaseError {
+  constructor({ offset }) {
+    super(`Offset \`${offset}\` cannot be negative.`, {
+      name: "NegativeOffsetError"
+    });
+  }
+}
+class PositionOutOfBoundsError extends BaseError {
+  constructor({ length, position }) {
+    super(`Position \`${position}\` is out of bounds (\`0 < position < ${length}\`).`, { name: "PositionOutOfBoundsError" });
+  }
+}
+class RecursiveReadLimitExceededError extends BaseError {
+  constructor({ count, limit }) {
+    super(`Recursive read limit of \`${limit}\` exceeded (recursive read count: \`${count}\`).`, { name: "RecursiveReadLimitExceededError" });
+  }
+}
+const staticCursor = {
+  bytes: new Uint8Array(),
+  dataView: new DataView(new ArrayBuffer(0)),
+  position: 0,
+  positionReadCount: /* @__PURE__ */ new Map(),
+  recursiveReadCount: 0,
+  recursiveReadLimit: Number.POSITIVE_INFINITY,
+  assertReadLimit() {
+    if (this.recursiveReadCount >= this.recursiveReadLimit)
+      throw new RecursiveReadLimitExceededError({
+        count: this.recursiveReadCount + 1,
+        limit: this.recursiveReadLimit
+      });
+  },
+  assertPosition(position) {
+    if (position < 0 || position > this.bytes.length - 1)
+      throw new PositionOutOfBoundsError({
+        length: this.bytes.length,
+        position
+      });
+  },
+  decrementPosition(offset) {
+    if (offset < 0)
+      throw new NegativeOffsetError({ offset });
+    const position = this.position - offset;
+    this.assertPosition(position);
+    this.position = position;
+  },
+  getReadCount(position) {
+    return this.positionReadCount.get(position || this.position) || 0;
+  },
+  incrementPosition(offset) {
+    if (offset < 0)
+      throw new NegativeOffsetError({ offset });
+    const position = this.position + offset;
+    this.assertPosition(position);
+    this.position = position;
+  },
+  inspectByte(position_) {
+    const position = position_ ?? this.position;
+    this.assertPosition(position);
+    return this.bytes[position];
+  },
+  inspectBytes(length, position_) {
+    const position = position_ ?? this.position;
+    this.assertPosition(position + length - 1);
+    return this.bytes.subarray(position, position + length);
+  },
+  inspectUint8(position_) {
+    const position = position_ ?? this.position;
+    this.assertPosition(position);
+    return this.bytes[position];
+  },
+  inspectUint16(position_) {
+    const position = position_ ?? this.position;
+    this.assertPosition(position + 1);
+    return this.dataView.getUint16(position);
+  },
+  inspectUint24(position_) {
+    const position = position_ ?? this.position;
+    this.assertPosition(position + 2);
+    return (this.dataView.getUint16(position) << 8) + this.dataView.getUint8(position + 2);
+  },
+  inspectUint32(position_) {
+    const position = position_ ?? this.position;
+    this.assertPosition(position + 3);
+    return this.dataView.getUint32(position);
+  },
+  pushByte(byte) {
+    this.assertPosition(this.position);
+    this.bytes[this.position] = byte;
+    this.position++;
+  },
+  pushBytes(bytes) {
+    this.assertPosition(this.position + bytes.length - 1);
+    this.bytes.set(bytes, this.position);
+    this.position += bytes.length;
+  },
+  pushUint8(value) {
+    this.assertPosition(this.position);
+    this.bytes[this.position] = value;
+    this.position++;
+  },
+  pushUint16(value) {
+    this.assertPosition(this.position + 1);
+    this.dataView.setUint16(this.position, value);
+    this.position += 2;
+  },
+  pushUint24(value) {
+    this.assertPosition(this.position + 2);
+    this.dataView.setUint16(this.position, value >> 8);
+    this.dataView.setUint8(this.position + 2, value & 255);
+    this.position += 3;
+  },
+  pushUint32(value) {
+    this.assertPosition(this.position + 3);
+    this.dataView.setUint32(this.position, value);
+    this.position += 4;
+  },
+  readByte() {
+    this.assertReadLimit();
+    this._touch();
+    const value = this.inspectByte();
+    this.position++;
+    return value;
+  },
+  readBytes(length, size2) {
+    this.assertReadLimit();
+    this._touch();
+    const value = this.inspectBytes(length);
+    this.position += size2 ?? length;
+    return value;
+  },
+  readUint8() {
+    this.assertReadLimit();
+    this._touch();
+    const value = this.inspectUint8();
+    this.position += 1;
+    return value;
+  },
+  readUint16() {
+    this.assertReadLimit();
+    this._touch();
+    const value = this.inspectUint16();
+    this.position += 2;
+    return value;
+  },
+  readUint24() {
+    this.assertReadLimit();
+    this._touch();
+    const value = this.inspectUint24();
+    this.position += 3;
+    return value;
+  },
+  readUint32() {
+    this.assertReadLimit();
+    this._touch();
+    const value = this.inspectUint32();
+    this.position += 4;
+    return value;
+  },
+  get remaining() {
+    return this.bytes.length - this.position;
+  },
+  setPosition(position) {
+    const oldPosition = this.position;
+    this.assertPosition(position);
+    this.position = position;
+    return () => this.position = oldPosition;
+  },
+  _touch() {
+    if (this.recursiveReadLimit === Number.POSITIVE_INFINITY)
+      return;
+    const count = this.getReadCount();
+    this.positionReadCount.set(this.position, count + 1);
+    if (count > 0)
+      this.recursiveReadCount++;
+  }
+};
+function createCursor(bytes, { recursiveReadLimit = 8192 } = {}) {
+  const cursor = Object.create(staticCursor);
+  cursor.bytes = bytes;
+  cursor.dataView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  cursor.positionReadCount = /* @__PURE__ */ new Map();
+  cursor.recursiveReadLimit = recursiveReadLimit;
+  return cursor;
+}
+function toRlp(bytes, to = "hex") {
+  const encodable = getEncodable(bytes);
+  const cursor = createCursor(new Uint8Array(encodable.length));
+  encodable.encode(cursor);
+  if (to === "hex")
+    return bytesToHex$1(cursor.bytes);
+  return cursor.bytes;
+}
+function getEncodable(bytes) {
+  if (Array.isArray(bytes))
+    return getEncodableList(bytes.map((x) => getEncodable(x)));
+  return getEncodableBytes(bytes);
+}
+function getEncodableList(list) {
+  const bodyLength = list.reduce((acc, x) => acc + x.length, 0);
+  const sizeOfBodyLength = getSizeOfLength(bodyLength);
+  const length = (() => {
+    if (bodyLength <= 55)
+      return 1 + bodyLength;
+    return 1 + sizeOfBodyLength + bodyLength;
+  })();
+  return {
+    length,
+    encode(cursor) {
+      if (bodyLength <= 55) {
+        cursor.pushByte(192 + bodyLength);
+      } else {
+        cursor.pushByte(192 + 55 + sizeOfBodyLength);
+        if (sizeOfBodyLength === 1)
+          cursor.pushUint8(bodyLength);
+        else if (sizeOfBodyLength === 2)
+          cursor.pushUint16(bodyLength);
+        else if (sizeOfBodyLength === 3)
+          cursor.pushUint24(bodyLength);
+        else
+          cursor.pushUint32(bodyLength);
+      }
+      for (const { encode: encode3 } of list) {
+        encode3(cursor);
+      }
+    }
+  };
+}
+function getEncodableBytes(bytesOrHex) {
+  const bytes = typeof bytesOrHex === "string" ? hexToBytes(bytesOrHex) : bytesOrHex;
+  const sizeOfBytesLength = getSizeOfLength(bytes.length);
+  const length = (() => {
+    if (bytes.length === 1 && bytes[0] < 128)
+      return 1;
+    if (bytes.length <= 55)
+      return 1 + bytes.length;
+    return 1 + sizeOfBytesLength + bytes.length;
+  })();
+  return {
+    length,
+    encode(cursor) {
+      if (bytes.length === 1 && bytes[0] < 128) {
+        cursor.pushBytes(bytes);
+      } else if (bytes.length <= 55) {
+        cursor.pushByte(128 + bytes.length);
+        cursor.pushBytes(bytes);
+      } else {
+        cursor.pushByte(128 + 55 + sizeOfBytesLength);
+        if (sizeOfBytesLength === 1)
+          cursor.pushUint8(bytes.length);
+        else if (sizeOfBytesLength === 2)
+          cursor.pushUint16(bytes.length);
+        else if (sizeOfBytesLength === 3)
+          cursor.pushUint24(bytes.length);
+        else
+          cursor.pushUint32(bytes.length);
+        cursor.pushBytes(bytes);
+      }
+    }
+  };
+}
+function getSizeOfLength(length) {
+  if (length < 2 ** 8)
+    return 1;
+  if (length < 2 ** 16)
+    return 2;
+  if (length < 2 ** 24)
+    return 3;
+  if (length < 2 ** 32)
+    return 4;
+  throw new BaseError("Length is too large.");
+}
+const etherUnits = {
+  gwei: 9,
+  wei: 18
+};
+const gweiUnits = {
+  ether: -9,
+  wei: 9
+};
+function formatUnits(value, decimals) {
+  let display = value.toString();
+  const negative = display.startsWith("-");
+  if (negative)
+    display = display.slice(1);
+  display = display.padStart(decimals, "0");
+  let [integer, fraction] = [
+    display.slice(0, display.length - decimals),
+    display.slice(display.length - decimals)
+  ];
+  fraction = fraction.replace(/(0+)$/, "");
+  return `${negative ? "-" : ""}${integer || "0"}${fraction ? `.${fraction}` : ""}`;
+}
+function formatGwei(wei, unit = "wei") {
+  return formatUnits(wei, gweiUnits[unit]);
+}
+function prettyPrint(args) {
+  const entries = Object.entries(args).map(([key, value]) => {
+    if (value === void 0 || value === false)
+      return null;
+    return [key, value];
+  }).filter(Boolean);
+  const maxLength = entries.reduce((acc, [key]) => Math.max(acc, key.length), 0);
+  return entries.map(([key, value]) => `  ${`${key}:`.padEnd(maxLength + 1)}  ${value}`).join("\n");
+}
+class FeeConflictError extends BaseError {
+  constructor() {
+    super([
+      "Cannot specify both a `gasPrice` and a `maxFeePerGas`/`maxPriorityFeePerGas`.",
+      "Use `maxFeePerGas`/`maxPriorityFeePerGas` for EIP-1559 compatible networks, and `gasPrice` for others."
+    ].join("\n"), { name: "FeeConflictError" });
+  }
+}
+class InvalidLegacyVError extends BaseError {
+  constructor({ v }) {
+    super(`Invalid \`v\` value "${v}". Expected 27 or 28.`, {
+      name: "InvalidLegacyVError"
+    });
+  }
+}
+class InvalidSerializableTransactionError extends BaseError {
+  constructor({ transaction }) {
+    super("Cannot infer a transaction type from provided transaction.", {
+      metaMessages: [
+        "Provided Transaction:",
+        "{",
+        prettyPrint(transaction),
+        "}",
+        "",
+        "To infer the type, either provide:",
+        "- a `type` to the Transaction, or",
+        "- an EIP-1559 Transaction with `maxFeePerGas`, or",
+        "- an EIP-2930 Transaction with `gasPrice` & `accessList`, or",
+        "- an EIP-4844 Transaction with `blobs`, `blobVersionedHashes`, `sidecars`, or",
+        "- an EIP-7702 Transaction with `authorizationList`, or",
+        "- a Legacy Transaction with `gasPrice`"
+      ],
+      name: "InvalidSerializableTransactionError"
+    });
+  }
+}
+class InvalidStorageKeySizeError extends BaseError {
+  constructor({ storageKey }) {
+    super(`Size for storage key "${storageKey}" is invalid. Expected 32 bytes. Got ${Math.floor((storageKey.length - 2) / 2)} bytes.`, { name: "InvalidStorageKeySizeError" });
+  }
+}
+const crypto = typeof globalThis === "object" && "crypto" in globalThis ? globalThis.crypto : void 0;
+/*! noble-hashes - MIT License (c) 2022 Paul Miller (paulmillr.com) */
+function isBytes(a) {
+  return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array";
+}
+function anumber(n) {
+  if (!Number.isSafeInteger(n) || n < 0)
+    throw new Error("positive integer expected, got " + n);
+}
+function abytes(b, ...lengths) {
+  if (!isBytes(b))
+    throw new Error("Uint8Array expected");
+  if (lengths.length > 0 && !lengths.includes(b.length))
+    throw new Error("Uint8Array expected of length " + lengths + ", got length=" + b.length);
+}
+function ahash(h) {
+  if (typeof h !== "function" || typeof h.create !== "function")
+    throw new Error("Hash should be wrapped by utils.createHasher");
+  anumber(h.outputLen);
+  anumber(h.blockLen);
+}
+function aexists(instance, checkFinished = true) {
+  if (instance.destroyed)
+    throw new Error("Hash instance has been destroyed");
+  if (checkFinished && instance.finished)
+    throw new Error("Hash#digest() has already been called");
+}
+function aoutput(out, instance) {
+  abytes(out);
+  const min = instance.outputLen;
+  if (out.length < min) {
+    throw new Error("digestInto() expects output buffer of length at least " + min);
+  }
+}
+function u32(arr) {
+  return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
+}
+function clean(...arrays) {
+  for (let i = 0; i < arrays.length; i++) {
+    arrays[i].fill(0);
+  }
+}
+function createView(arr) {
+  return new DataView(arr.buffer, arr.byteOffset, arr.byteLength);
+}
+function rotr(word, shift) {
+  return word << 32 - shift | word >>> shift;
+}
+const isLE = /* @__PURE__ */ (() => new Uint8Array(new Uint32Array([287454020]).buffer)[0] === 68)();
+function byteSwap(word) {
+  return word << 24 & 4278190080 | word << 8 & 16711680 | word >>> 8 & 65280 | word >>> 24 & 255;
+}
+function byteSwap32(arr) {
+  for (let i = 0; i < arr.length; i++) {
+    arr[i] = byteSwap(arr[i]);
+  }
+  return arr;
+}
+const swap32IfBE = isLE ? (u) => u : byteSwap32;
+function utf8ToBytes(str) {
+  if (typeof str !== "string")
+    throw new Error("string expected");
+  return new Uint8Array(new TextEncoder().encode(str));
+}
+function toBytes(data) {
+  if (typeof data === "string")
+    data = utf8ToBytes(data);
+  abytes(data);
+  return data;
+}
+function concatBytes(...arrays) {
+  let sum = 0;
+  for (let i = 0; i < arrays.length; i++) {
+    const a = arrays[i];
+    abytes(a);
+    sum += a.length;
+  }
+  const res = new Uint8Array(sum);
+  for (let i = 0, pad2 = 0; i < arrays.length; i++) {
+    const a = arrays[i];
+    res.set(a, pad2);
+    pad2 += a.length;
+  }
+  return res;
+}
+class Hash {
+}
+function createHasher(hashCons) {
+  const hashC = (msg) => hashCons().update(toBytes(msg)).digest();
+  const tmp = hashCons();
+  hashC.outputLen = tmp.outputLen;
+  hashC.blockLen = tmp.blockLen;
+  hashC.create = () => hashCons();
+  return hashC;
+}
+function randomBytes(bytesLength = 32) {
+  if (crypto && typeof crypto.getRandomValues === "function") {
+    return crypto.getRandomValues(new Uint8Array(bytesLength));
+  }
+  if (crypto && typeof crypto.randomBytes === "function") {
+    return Uint8Array.from(crypto.randomBytes(bytesLength));
+  }
+  throw new Error("crypto.getRandomValues must be defined");
+}
+const U32_MASK64 = /* @__PURE__ */ BigInt(2 ** 32 - 1);
+const _32n = /* @__PURE__ */ BigInt(32);
+function fromBig(n, le = false) {
+  if (le)
+    return { h: Number(n & U32_MASK64), l: Number(n >> _32n & U32_MASK64) };
+  return { h: Number(n >> _32n & U32_MASK64) | 0, l: Number(n & U32_MASK64) | 0 };
+}
+function split(lst, le = false) {
+  const len = lst.length;
+  let Ah = new Uint32Array(len);
+  let Al = new Uint32Array(len);
+  for (let i = 0; i < len; i++) {
+    const { h, l } = fromBig(lst[i], le);
+    [Ah[i], Al[i]] = [h, l];
+  }
+  return [Ah, Al];
+}
+const rotlSH = (h, l, s) => h << s | l >>> 32 - s;
+const rotlSL = (h, l, s) => l << s | h >>> 32 - s;
+const rotlBH = (h, l, s) => l << s - 32 | h >>> 64 - s;
+const rotlBL = (h, l, s) => h << s - 32 | l >>> 64 - s;
+class InvalidAddressError extends BaseError {
+  constructor({ address }) {
+    super(`Address "${address}" is invalid.`, {
+      metaMessages: [
+        "- Address must be a hex value of 20 bytes (40 hex characters).",
+        "- Address must match its checksum counterpart."
+      ],
+      name: "InvalidAddressError"
+    });
+  }
+}
+class ChainDoesNotSupportContract extends BaseError {
+  constructor({ blockNumber, chain, contract }) {
+    super(`Chain "${chain.name}" does not support contract "${contract.name}".`, {
+      metaMessages: [
+        "This could be due to any of the following:",
+        ...blockNumber && contract.blockCreated && contract.blockCreated > blockNumber ? [
+          `- The contract "${contract.name}" was not deployed until block ${contract.blockCreated} (current block ${blockNumber}).`
+        ] : [
+          `- The chain does not have the contract "${contract.name}" configured.`
+        ]
+      ],
+      name: "ChainDoesNotSupportContract"
+    });
+  }
+}
+class ClientChainNotConfiguredError extends BaseError {
+  constructor() {
+    super("No chain was provided to the Client.", {
+      name: "ClientChainNotConfiguredError"
+    });
+  }
+}
+class InvalidChainIdError extends BaseError {
+  constructor({ chainId }) {
+    super(typeof chainId === "number" ? `Chain ID "${chainId}" is invalid.` : "Chain ID is invalid.", { name: "InvalidChainIdError" });
+  }
+}
+class ExecutionRevertedError extends BaseError {
+  constructor({ cause, message: message2 } = {}) {
+    const reason = message2?.replace("execution reverted: ", "")?.replace("execution reverted", "");
+    super(`Execution reverted ${reason ? `with reason: ${reason}` : "for an unknown reason"}.`, {
+      cause,
+      name: "ExecutionRevertedError"
+    });
+  }
+}
+Object.defineProperty(ExecutionRevertedError, "code", {
+  enumerable: true,
+  configurable: true,
+  writable: true,
+  value: 3
+});
+Object.defineProperty(ExecutionRevertedError, "nodeMessage", {
+  enumerable: true,
+  configurable: true,
+  writable: true,
+  value: /execution reverted/
+});
+class FeeCapTooHighError extends BaseError {
+  constructor({ cause, maxFeePerGas } = {}) {
+    super(`The fee cap (\`maxFeePerGas\`${maxFeePerGas ? ` = ${formatGwei(maxFeePerGas)} gwei` : ""}) cannot be higher than the maximum allowed value (2^256-1).`, {
+      cause,
+      name: "FeeCapTooHighError"
+    });
+  }
+}
+Object.defineProperty(FeeCapTooHighError, "nodeMessage", {
+  enumerable: true,
+  configurable: true,
+  writable: true,
+  value: /max fee per gas higher than 2\^256-1|fee cap higher than 2\^256-1/
+});
+class FeeCapTooLowError extends BaseError {
+  constructor({ cause, maxFeePerGas } = {}) {
+    super(`The fee cap (\`maxFeePerGas\`${maxFeePerGas ? ` = ${formatGwei(maxFeePerGas)}` : ""} gwei) cannot be lower than the block base fee.`, {
+      cause,
+      name: "FeeCapTooLowError"
+    });
+  }
+}
+Object.defineProperty(FeeCapTooLowError, "nodeMessage", {
+  enumerable: true,
+  configurable: true,
+  writable: true,
+  value: /max fee per gas less than block base fee|fee cap less than block base fee|transaction is outdated/
+});
+class NonceTooHighError extends BaseError {
+  constructor({ cause, nonce } = {}) {
+    super(`Nonce provided for the transaction ${nonce ? `(${nonce}) ` : ""}is higher than the next one expected.`, { cause, name: "NonceTooHighError" });
+  }
+}
+Object.defineProperty(NonceTooHighError, "nodeMessage", {
+  enumerable: true,
+  configurable: true,
+  writable: true,
+  value: /nonce too high/
+});
+class NonceTooLowError extends BaseError {
+  constructor({ cause, nonce } = {}) {
+    super([
+      `Nonce provided for the transaction ${nonce ? `(${nonce}) ` : ""}is lower than the current nonce of the account.`,
+      "Try increasing the nonce or find the latest nonce with `getTransactionCount`."
+    ].join("\n"), { cause, name: "NonceTooLowError" });
+  }
+}
+Object.defineProperty(NonceTooLowError, "nodeMessage", {
+  enumerable: true,
+  configurable: true,
+  writable: true,
+  value: /nonce too low|transaction already imported|already known/
+});
+class NonceMaxValueError extends BaseError {
+  constructor({ cause, nonce } = {}) {
+    super(`Nonce provided for the transaction ${nonce ? `(${nonce}) ` : ""}exceeds the maximum allowed nonce.`, { cause, name: "NonceMaxValueError" });
+  }
+}
+Object.defineProperty(NonceMaxValueError, "nodeMessage", {
+  enumerable: true,
+  configurable: true,
+  writable: true,
+  value: /nonce has max value/
+});
+class InsufficientFundsError extends BaseError {
+  constructor({ cause } = {}) {
+    super([
+      "The total cost (gas * gas fee + value) of executing this transaction exceeds the balance of the account."
+    ].join("\n"), {
+      cause,
+      metaMessages: [
+        "This error could arise when the account does not have enough funds to:",
+        " - pay for the total gas fee,",
+        " - pay for the value to send.",
+        " ",
+        "The cost of the transaction is calculated as `gas * gas fee + value`, where:",
+        " - `gas` is the amount of gas needed for transaction to execute,",
+        " - `gas fee` is the gas fee,",
+        " - `value` is the amount of ether to send to the recipient."
+      ],
+      name: "InsufficientFundsError"
+    });
+  }
+}
+Object.defineProperty(InsufficientFundsError, "nodeMessage", {
+  enumerable: true,
+  configurable: true,
+  writable: true,
+  value: /insufficient funds|exceeds transaction sender account balance/
+});
+class IntrinsicGasTooHighError extends BaseError {
+  constructor({ cause, gas } = {}) {
+    super(`The amount of gas ${gas ? `(${gas}) ` : ""}provided for the transaction exceeds the limit allowed for the block.`, {
+      cause,
+      name: "IntrinsicGasTooHighError"
+    });
+  }
+}
+Object.defineProperty(IntrinsicGasTooHighError, "nodeMessage", {
+  enumerable: true,
+  configurable: true,
+  writable: true,
+  value: /intrinsic gas too high|gas limit reached/
+});
+class IntrinsicGasTooLowError extends BaseError {
+  constructor({ cause, gas } = {}) {
+    super(`The amount of gas ${gas ? `(${gas}) ` : ""}provided for the transaction is too low.`, {
+      cause,
+      name: "IntrinsicGasTooLowError"
+    });
+  }
+}
+Object.defineProperty(IntrinsicGasTooLowError, "nodeMessage", {
+  enumerable: true,
+  configurable: true,
+  writable: true,
+  value: /intrinsic gas too low/
+});
+class TransactionTypeNotSupportedError extends BaseError {
+  constructor({ cause }) {
+    super("The transaction type is not supported for this chain.", {
+      cause,
+      name: "TransactionTypeNotSupportedError"
+    });
+  }
+}
+Object.defineProperty(TransactionTypeNotSupportedError, "nodeMessage", {
+  enumerable: true,
+  configurable: true,
+  writable: true,
+  value: /transaction type not valid/
+});
+class TipAboveFeeCapError extends BaseError {
+  constructor({ cause, maxPriorityFeePerGas, maxFeePerGas } = {}) {
+    super([
+      `The provided tip (\`maxPriorityFeePerGas\`${maxPriorityFeePerGas ? ` = ${formatGwei(maxPriorityFeePerGas)} gwei` : ""}) cannot be higher than the fee cap (\`maxFeePerGas\`${maxFeePerGas ? ` = ${formatGwei(maxFeePerGas)} gwei` : ""}).`
+    ].join("\n"), {
+      cause,
+      name: "TipAboveFeeCapError"
+    });
+  }
+}
+Object.defineProperty(TipAboveFeeCapError, "nodeMessage", {
+  enumerable: true,
+  configurable: true,
+  writable: true,
+  value: /max priority fee per gas higher than max fee per gas|tip higher than fee cap/
+});
+class UnknownNodeError extends BaseError {
+  constructor({ cause }) {
+    super(`An error occurred while executing: ${cause?.shortMessage}`, {
+      cause,
+      name: "UnknownNodeError"
+    });
+  }
+}
+class LruMap extends Map {
+  constructor(size2) {
+    super();
+    Object.defineProperty(this, "maxSize", {
+      enumerable: true,
+      configurable: true,
+      writable: true,
+      value: void 0
+    });
+    this.maxSize = size2;
+  }
+  get(key) {
+    const value = super.get(key);
+    if (super.has(key) && value !== void 0) {
+      this.delete(key);
+      super.set(key, value);
+    }
+    return value;
+  }
+  set(key, value) {
+    super.set(key, value);
+    if (this.maxSize && this.size > this.maxSize) {
+      const firstKey = this.keys().next().value;
+      if (firstKey)
+        this.delete(firstKey);
+    }
+    return this;
+  }
+}
+const _0n = BigInt(0);
+const _1n = BigInt(1);
+const _2n = BigInt(2);
+const _7n = BigInt(7);
+const _256n = BigInt(256);
+const _0x71n = BigInt(113);
+const SHA3_PI = [];
+const SHA3_ROTL = [];
+const _SHA3_IOTA = [];
+for (let round = 0, R = _1n, x = 1, y = 0; round < 24; round++) {
+  [x, y] = [y, (2 * x + 3 * y) % 5];
+  SHA3_PI.push(2 * (5 * y + x));
+  SHA3_ROTL.push((round + 1) * (round + 2) / 2 % 64);
+  let t = _0n;
+  for (let j = 0; j < 7; j++) {
+    R = (R << _1n ^ (R >> _7n) * _0x71n) % _256n;
+    if (R & _2n)
+      t ^= _1n << (_1n << /* @__PURE__ */ BigInt(j)) - _1n;
+  }
+  _SHA3_IOTA.push(t);
+}
+const IOTAS = split(_SHA3_IOTA, true);
+const SHA3_IOTA_H = IOTAS[0];
+const SHA3_IOTA_L = IOTAS[1];
+const rotlH = (h, l, s) => s > 32 ? rotlBH(h, l, s) : rotlSH(h, l, s);
+const rotlL = (h, l, s) => s > 32 ? rotlBL(h, l, s) : rotlSL(h, l, s);
+function keccakP(s, rounds = 24) {
+  const B = new Uint32Array(5 * 2);
+  for (let round = 24 - rounds; round < 24; round++) {
+    for (let x = 0; x < 10; x++)
+      B[x] = s[x] ^ s[x + 10] ^ s[x + 20] ^ s[x + 30] ^ s[x + 40];
+    for (let x = 0; x < 10; x += 2) {
+      const idx1 = (x + 8) % 10;
+      const idx0 = (x + 2) % 10;
+      const B0 = B[idx0];
+      const B1 = B[idx0 + 1];
+      const Th = rotlH(B0, B1, 1) ^ B[idx1];
+      const Tl = rotlL(B0, B1, 1) ^ B[idx1 + 1];
+      for (let y = 0; y < 50; y += 10) {
+        s[x + y] ^= Th;
+        s[x + y + 1] ^= Tl;
+      }
+    }
+    let curH = s[2];
+    let curL = s[3];
+    for (let t = 0; t < 24; t++) {
+      const shift = SHA3_ROTL[t];
+      const Th = rotlH(curH, curL, shift);
+      const Tl = rotlL(curH, curL, shift);
+      const PI = SHA3_PI[t];
+      curH = s[PI];
+      curL = s[PI + 1];
+      s[PI] = Th;
+      s[PI + 1] = Tl;
+    }
+    for (let y = 0; y < 50; y += 10) {
+      for (let x = 0; x < 10; x++)
+        B[x] = s[y + x];
+      for (let x = 0; x < 10; x++)
+        s[y + x] ^= ~B[(x + 2) % 10] & B[(x + 4) % 10];
+    }
+    s[0] ^= SHA3_IOTA_H[round];
+    s[1] ^= SHA3_IOTA_L[round];
+  }
+  clean(B);
+}
+class Keccak extends Hash {
+  // NOTE: we accept arguments in bytes instead of bits here.
+  constructor(blockLen, suffix, outputLen, enableXOF = false, rounds = 24) {
+    super();
+    this.pos = 0;
+    this.posOut = 0;
+    this.finished = false;
+    this.destroyed = false;
+    this.enableXOF = false;
+    this.blockLen = blockLen;
+    this.suffix = suffix;
+    this.outputLen = outputLen;
+    this.enableXOF = enableXOF;
+    this.rounds = rounds;
+    anumber(outputLen);
+    if (!(0 < blockLen && blockLen < 200))
+      throw new Error("only keccak-f1600 function is supported");
+    this.state = new Uint8Array(200);
+    this.state32 = u32(this.state);
+  }
+  clone() {
+    return this._cloneInto();
+  }
+  keccak() {
+    swap32IfBE(this.state32);
+    keccakP(this.state32, this.rounds);
+    swap32IfBE(this.state32);
+    this.posOut = 0;
+    this.pos = 0;
+  }
+  update(data) {
+    aexists(this);
+    data = toBytes(data);
+    abytes(data);
+    const { blockLen, state } = this;
+    const len = data.length;
+    for (let pos = 0; pos < len; ) {
+      const take = Math.min(blockLen - this.pos, len - pos);
+      for (let i = 0; i < take; i++)
+        state[this.pos++] ^= data[pos++];
+      if (this.pos === blockLen)
+        this.keccak();
+    }
+    return this;
+  }
+  finish() {
+    if (this.finished)
+      return;
+    this.finished = true;
+    const { state, suffix, pos, blockLen } = this;
+    state[pos] ^= suffix;
+    if ((suffix & 128) !== 0 && pos === blockLen - 1)
+      this.keccak();
+    state[blockLen - 1] ^= 128;
+    this.keccak();
+  }
+  writeInto(out) {
+    aexists(this, false);
+    abytes(out);
+    this.finish();
+    const bufferOut = this.state;
+    const { blockLen } = this;
+    for (let pos = 0, len = out.length; pos < len; ) {
+      if (this.posOut >= blockLen)
+        this.keccak();
+      const take = Math.min(blockLen - this.posOut, len - pos);
+      out.set(bufferOut.subarray(this.posOut, this.posOut + take), pos);
+      this.posOut += take;
+      pos += take;
+    }
+    return out;
+  }
+  xofInto(out) {
+    if (!this.enableXOF)
+      throw new Error("XOF is not possible for this instance");
+    return this.writeInto(out);
+  }
+  xof(bytes) {
+    anumber(bytes);
+    return this.xofInto(new Uint8Array(bytes));
+  }
+  digestInto(out) {
+    aoutput(out, this);
+    if (this.finished)
+      throw new Error("digest() was already called");
+    this.writeInto(out);
+    this.destroy();
+    return out;
+  }
+  digest() {
+    return this.digestInto(new Uint8Array(this.outputLen));
+  }
+  destroy() {
+    this.destroyed = true;
+    clean(this.state);
+  }
+  _cloneInto(to) {
+    const { blockLen, suffix, outputLen, rounds, enableXOF } = this;
+    to || (to = new Keccak(blockLen, suffix, outputLen, enableXOF, rounds));
+    to.state32.set(this.state32);
+    to.pos = this.pos;
+    to.posOut = this.posOut;
+    to.finished = this.finished;
+    to.rounds = rounds;
+    to.suffix = suffix;
+    to.outputLen = outputLen;
+    to.enableXOF = enableXOF;
+    to.destroyed = this.destroyed;
+    return to;
+  }
+}
+const gen = (suffix, blockLen, outputLen) => createHasher(() => new Keccak(blockLen, suffix, outputLen));
+const keccak_256 = /* @__PURE__ */ (() => gen(1, 136, 256 / 8))();
+function keccak256(value, to_) {
+  const to = to_ || "hex";
+  const bytes = keccak_256(isHex(value, { strict: false }) ? toBytes$1(value) : value);
+  if (to === "bytes")
+    return bytes;
+  return toHex(bytes);
+}
+const checksumAddressCache = /* @__PURE__ */ new LruMap(8192);
+function checksumAddress(address_, chainId) {
+  if (checksumAddressCache.has(`${address_}.${chainId}`))
+    return checksumAddressCache.get(`${address_}.${chainId}`);
+  const hexAddress = address_.substring(2).toLowerCase();
+  const hash = keccak256(stringToBytes(hexAddress), "bytes");
+  const address = hexAddress.split("");
+  for (let i = 0; i < 40; i += 2) {
+    if (hash[i >> 1] >> 4 >= 8 && address[i]) {
+      address[i] = address[i].toUpperCase();
+    }
+    if ((hash[i >> 1] & 15) >= 8 && address[i + 1]) {
+      address[i + 1] = address[i + 1].toUpperCase();
+    }
+  }
+  const result = `0x${address.join("")}`;
+  checksumAddressCache.set(`${address_}.${chainId}`, result);
+  return result;
+}
+function getAddress(address, chainId) {
+  if (!isAddress(address, { strict: false }))
+    throw new InvalidAddressError({ address });
+  return checksumAddress(address, chainId);
+}
+const addressRegex = /^0x[a-fA-F0-9]{40}$/;
+const isAddressCache = /* @__PURE__ */ new LruMap(8192);
+function isAddress(address, options) {
+  const { strict = true } = options ?? {};
+  const cacheKey = `${address}.${strict}`;
+  if (isAddressCache.has(cacheKey))
+    return isAddressCache.get(cacheKey);
+  const result = (() => {
+    if (!addressRegex.test(address))
+      return false;
+    if (address.toLowerCase() === address)
+      return true;
+    if (strict)
+      return checksumAddress(address) === address;
+    return true;
+  })();
+  isAddressCache.set(cacheKey, result);
+  return result;
+}
+function slice(value, start, end2, { strict } = {}) {
+  if (isHex(value, { strict: false }))
+    return sliceHex(value, start, end2, {
+      strict
+    });
+  return sliceBytes(value, start, end2, {
+    strict
+  });
+}
+function assertStartOffset(value, start) {
+  if (typeof start === "number" && start > 0 && start > size(value) - 1)
+    throw new SliceOffsetOutOfBoundsError({
+      offset: start,
+      position: "start",
+      size: size(value)
+    });
+}
+function assertEndOffset(value, start, end2) {
+  if (typeof start === "number" && typeof end2 === "number" && size(value) !== end2 - start) {
+    throw new SliceOffsetOutOfBoundsError({
+      offset: end2,
+      position: "end",
+      size: size(value)
+    });
+  }
+}
+function sliceBytes(value_, start, end2, { strict } = {}) {
+  assertStartOffset(value_, start);
+  const value = value_.slice(start, end2);
+  if (strict)
+    assertEndOffset(value, start, end2);
+  return value;
+}
+function sliceHex(value_, start, end2, { strict } = {}) {
+  assertStartOffset(value_, start);
+  const value = `0x${value_.replace("0x", "").slice((start ?? 0) * 2, (end2 ?? value_.length) * 2)}`;
+  if (strict)
+    assertEndOffset(value, start, end2);
+  return value;
+}
+const entryPoint07Address = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";
+const MAGIC_VALUE_SIG_REPLAYABLE = "0x0555ad2729e8da1777a4e5020806f8bf7601c3db6bfe402f410a34958363a95a";
+const FACTORY_ADDRESS_V0_6 = "0x5de4839a76cf55d0c90e2061ef4386d962E15ae3";
+const FACTORY_ADDRESS_V0_6_INIT_CODE_HASH = "0xee9d8350bd899dd261db689aafd87eb8a30f085adbaff48152399438ff4eed73";
+const KernelVersionToAddressesMap = {
+  "0.0.2": {
+    accountImplementationAddress: viem.zeroAddress,
+    factoryAddress: "0xaee9762ce625e0a8f7b184670fb57c37bfe1d0f1"
+  },
+  "0.2.2": {
+    accountImplementationAddress: "0x0DA6a956B9488eD4dd761E59f52FDc6c8068E6B5",
+    factoryAddress: FACTORY_ADDRESS_V0_6,
+    initCodeHash: FACTORY_ADDRESS_V0_6_INIT_CODE_HASH
+  },
+  "0.2.3": {
+    accountImplementationAddress: "0xD3F582F6B4814E989Ee8E96bc3175320B5A540ab",
+    factoryAddress: FACTORY_ADDRESS_V0_6,
+    initCodeHash: FACTORY_ADDRESS_V0_6_INIT_CODE_HASH
+  },
+  "0.2.4": {
+    accountImplementationAddress: "0xd3082872F8B06073A021b4602e022d5A070d7cfC",
+    factoryAddress: FACTORY_ADDRESS_V0_6,
+    initCodeHash: FACTORY_ADDRESS_V0_6_INIT_CODE_HASH
+  },
+  "0.3.0": {
+    accountImplementationAddress: "0x94F097E1ebEB4ecA3AAE54cabb08905B239A7D27",
+    factoryAddress: "0x6723b44Abeec4E71eBE3232BD5B455805baDD22f",
+    metaFactoryAddress: "0xd703aaE79538628d27099B8c4f621bE4CCd142d5",
+    initCodeHash: "0x6fe6e6ea30eddce942b9618033ab8429f9ddac594053bec8a6744fffc71976e2"
+  },
+  "0.3.1": {
+    accountImplementationAddress: "0xBAC849bB641841b44E965fB01A4Bf5F074f84b4D",
+    factoryAddress: "0xaac5D4240AF87249B3f71BC8E4A2cae074A3E419",
+    metaFactoryAddress: "0xd703aaE79538628d27099B8c4f621bE4CCd142d5",
+    initCodeHash: "0x85d96aa1c9a65886d094915d76ccae85f14027a02c1647dde659f869460f03e6"
+  },
+  "0.3.2": {
+    accountImplementationAddress: "0xD830D15D3dc0C269F3dBAa0F3e8626d33CFdaBe1",
+    factoryAddress: "0x7a1dBAB750f12a90EB1B60D2Ae3aD17D4D81EfFe",
+    metaFactoryAddress: "0xd703aaE79538628d27099B8c4f621bE4CCd142d5",
+    initCodeHash: "0xc7c48c9dd12de68b8a4689b6f8c8c07b61d4d6fa4ddecdd86a6980d045fa67eb"
+  },
+  "0.3.3": {
+    accountImplementationAddress: "0xd6CEDDe84be40893d153Be9d467CD6aD37875b28",
+    factoryAddress: "0x2577507b78c2008Ff367261CB6285d44ba5eF2E9",
+    metaFactoryAddress: "0xd703aaE79538628d27099B8c4f621bE4CCd142d5",
+    initCodeHash: "0xc452397f1e7518f8cea0566ac057e243bb1643f6298aba8eec8cdee78ee3b3dd"
+    //"0x1fefe62c5b9c14c4661af2e04e4a2fa10205066cae5f629d304d483f5fa9e5fc"
+  }
+};
+const KERNEL_V3_1 = "0.3.1";
+const KERNEL_NAME = "Kernel";
+const VALIDATOR_TYPE = {
+  SUDO: "0x00",
+  SECONDARY: "0x01",
+  PERMISSION: "0x02",
+  EIP7702: "0x00"
+};
+exports.VALIDATOR_MODE = void 0;
+(function(VALIDATOR_MODE) {
+  VALIDATOR_MODE["DEFAULT"] = "0x00";
+  VALIDATOR_MODE["ENABLE"] = "0x01";
+})(exports.VALIDATOR_MODE || (exports.VALIDATOR_MODE = {}));
+exports.CALL_TYPE = void 0;
+(function(CALL_TYPE) {
+  CALL_TYPE["SINGLE"] = "0x00";
+  CALL_TYPE["BATCH"] = "0x01";
+  CALL_TYPE["DELEGATE_CALL"] = "0xFF";
+})(exports.CALL_TYPE || (exports.CALL_TYPE = {}));
+exports.EXEC_TYPE = void 0;
+(function(EXEC_TYPE) {
+  EXEC_TYPE["DEFAULT"] = "0x00";
+  EXEC_TYPE["TRY_EXEC"] = "0x01";
+})(exports.EXEC_TYPE || (exports.EXEC_TYPE = {}));
+const safeCreateCallAddress = "0x9b35Af71d77eaf8d7e40252370304687390A1A52";
+const getEntryPoint = (entryPointVersion) => {
+  return {
+    address: entryPoint07Address,
+    version: entryPointVersion
+  };
+};
+const entryPointV07 = getEntryPoint("0.7");
+const rollupsAccountAbstractionContracts = {
+  kernelImpl: "0x317A2D4564778A585BAd21376dC1ca65b75ccC6a",
+  kernelFactory: "0xdEF4343958B5dE047bddEFaB5Fa8F9Ff898890e5",
+  multichainValidator: "0x8aB3f6935399e1c10419cA2C93d60901a256b7e3",
+  metaFactory: "0x54db674c515e5fdec3f91345bc2fdafafd8b3b8a"
+};
+const composeRollupsContracts = {
+  tokens: {
+    WETH: "0x29dDf1a92069c4c170A63032C93c2aE66C359Bf9",
+    USDC: "0x0F5808d4776E7fB10293f2DCd6dA3073b8Dad970",
+    SSV: "0x969b0ad5ffa2376E8C0f5e413D510a056416D627"
+  },
+  bridge: "0x1388C9619aCCcd1dfff0234626EDDA61413Be74e"
+};
 var commonjsGlobal = typeof globalThis !== "undefined" ? globalThis : typeof window !== "undefined" ? window : typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : {};
 function getDefaultExportFromCjs(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
 }
-const bigintMax = (...args) => {
-  return args.filter((x) => !lodashEs.isUndefined(x)).reduce((max, cur) => cur > max ? cur : max);
-};
-const bigintMin = (...args) => {
-  return args.filter((x) => !lodashEs.isUndefined(x)).reduce((min, cur) => cur < min ? cur : min);
-};
-const bigintRound = (value, precision) => {
-  const remainder = value % precision;
-  return remainder >= precision / 2n ? value + (precision - remainder) : value - remainder;
-};
-const bigintFloor = (value, precision = 10000000n) => {
-  return value - value % precision;
-};
-const bigintAbs = (n) => n < 0n ? -n : n;
-const isBigIntChanged = (a, b, tolerance = viem.parseUnits("0.0001", 18)) => {
-  return bigintAbs(a - b) > tolerance;
-};
-const roundOperatorFee = (fee, precision = 10000000n) => {
-  return bigintRound(fee, precision);
-};
-const stringifyBigints = (anything) => {
-  return lodashEs.cloneDeepWith(anything, (value) => {
-    if (typeof value === "bigint") return value.toString();
-  });
-};
-const bigintifyNumbers = (numbers) => {
-  return lodashEs.cloneDeepWith(numbers, (value) => {
-    if (typeof value === "number") return BigInt(value);
-  });
-};
-const paramsToArray = ({
-  params,
-  abiFunction
-}) => {
-  return stringifyBigints(
-    abiFunction.inputs.reduce(
-      (acc, param) => {
-        if (param.name) {
-          const value = params[param.name];
-          if (Number.isNaN(value)) {
-            console.warn(`Passed NaN for the [${param.name}] parameter`);
-            return [...acc, void 0];
-          }
-          return [...acc, value];
-        }
-        return acc;
-      },
-      []
-    )
-  );
-};
-const extractAbiFunction = (abi, functionName) => {
-  return abi.find((abiFunction) => {
-    if (abiFunction.type !== "function") return false;
-    return abiFunction?.name === functionName;
-  });
-};
-const createAbiEncoder = (abi) => {
-  const writeFunctions = abi.filter(
-    (item) => item.type === "function" && item.stateMutability !== "view" && item.stateMutability !== "pure"
-  );
-  return writeFunctions.reduce((acc, abiFn) => {
-    return {
-      ...acc,
-      [abiFn.name]: (params) => {
-        return viem.encodeFunctionData({
-          abi,
-          functionName: abiFn.name,
-          args: !params ? [] : paramsToArray({ params, abiFunction: abiFn })
-        });
+function getAugmentedNamespace(n) {
+  if (n.__esModule) return n;
+  var f = n.default;
+  if (typeof f == "function") {
+    var a = function a2() {
+      if (this instanceof a2) {
+        return Reflect.construct(f, arguments, this.constructor);
       }
+      return f.apply(this, arguments);
     };
-  }, {});
-};
-const numberFormatter = new Intl.NumberFormat("en-US", {
-  useGrouping: true,
-  maximumFractionDigits: 2
-});
-const _percentageFormatter = new Intl.NumberFormat("en-US", {
-  style: "percent",
-  maximumFractionDigits: 2
-});
-const percentageFormatter = {
-  format: (value) => {
-    if (!value) return "0%";
-    return _percentageFormatter.format(value / 100);
-  }
-};
-const bigintFormatter = new Intl.NumberFormat("en-US", {
-  useGrouping: false,
-  maximumFractionDigits: 7
-});
-const ethFormatter = new Intl.NumberFormat("en-US", {
-  useGrouping: true,
-  maximumFractionDigits: 4
-});
-const formatSSV = (num, decimals = 18) => ethFormatter.format(+viem.formatUnits(num, decimals));
-const formatBigintInput = (num, decimals = 18) => bigintFormatter.format(+viem.formatUnits(num, decimals));
-const units = {
-  seconds: 1e3,
-  minutes: 6e4,
-  hours: 36e5,
-  days: 864e5,
-  weeks: 6048e5,
-  months: 2629746e3,
-  years: 31556952e3
-};
-const ms = (value, unit) => {
-  return value * units[unit];
-};
-const sortNumbers = (numbers) => {
-  return [...numbers].sort((a, b) => Number(a) - Number(b));
-};
-function toRpcUserOpCanonical(op) {
-  const hx = (v) => typeof v === "string" && viem.isHex(v) ? v : viem.toHex(BigInt(v || "0"));
-  const initCode = op.initCode && viem.isHex(op.initCode) && op.initCode !== "0x" ? op.initCode : op.factory && op.factory !== viem.zeroAddress && op.factoryData ? viem.concatHex([
-    op.factory.toLowerCase().startsWith("0x") ? op.factory : "0x" + op.factory,
-    op.factoryData
-  ]) : "0x";
-  console.log("initCode:", initCode);
-  return {
-    sender: op.sender,
-    nonce: hx(op.nonce),
-    initCode,
-    factory: op.factory,
-    factoryData: op.factoryData,
-    callData: op.callData,
-    callGasLimit: hx(op.callGasLimit),
-    verificationGasLimit: hx(op.verificationGasLimit),
-    preVerificationGas: hx(op.preVerificationGas),
-    maxFeePerGas: hx(op.maxFeePerGas),
-    maxPriorityFeePerGas: hx(op.maxPriorityFeePerGas),
-    paymaster: op.paymaster,
-    paymasterData: op.paymasterData,
-    paymasterVerificationGasLimit: hx(op.paymasterVerificationGasLimit),
-    paymasterPostOpGasLimit: hx(op.paymasterPostOpGasLimit),
-    signature: op.signature ?? "0x"
-  };
+    a.prototype = f.prototype;
+  } else a = {};
+  Object.defineProperty(a, "__esModule", { value: true });
+  Object.keys(n).forEach(function(k) {
+    var d = Object.getOwnPropertyDescriptor(n, k);
+    Object.defineProperty(a, k, d.get ? d : {
+      enumerable: true,
+      get: function() {
+        return n[k];
+      }
+    });
+  });
+  return a;
 }
 var indexLight = { exports: {} };
 var indexMinimal = {};
@@ -582,19 +1899,19 @@ var utf8$2 = {};
   };
 })(utf8$2);
 var pool_1 = pool;
-function pool(alloc2, slice, size) {
-  var SIZE = size || 8192;
+function pool(alloc2, slice2, size2) {
+  var SIZE = size2 || 8192;
   var MAX = SIZE >>> 1;
   var slab = null;
   var offset = SIZE;
-  return function pool_alloc(size2) {
-    if (size2 < 1 || size2 > MAX)
-      return alloc2(size2);
-    if (offset + size2 > SIZE) {
+  return function pool_alloc(size3) {
+    if (size3 < 1 || size3 > MAX)
+      return alloc2(size3);
+    if (offset + size3 > SIZE) {
       slab = alloc2(SIZE);
       offset = 0;
     }
-    var buf = slice.call(slab, offset, offset += size2);
+    var buf = slice2.call(slab, offset, offset += size3);
     if (offset & 7)
       offset = (offset | 7) + 1;
     return buf;
@@ -871,8 +2188,8 @@ function requireMinimal() {
         return new Buffer2(value, encoding);
       };
       util2._Buffer_allocUnsafe = Buffer2.allocUnsafe || /* istanbul ignore next */
-      function Buffer_allocUnsafe(size) {
-        return new Buffer2(size);
+      function Buffer_allocUnsafe(size2) {
+        return new Buffer2(size2);
       };
     };
   })(minimal);
@@ -912,8 +2229,8 @@ var create$1 = function create2() {
   };
 };
 Writer$1.create = create$1();
-Writer$1.alloc = function alloc(size) {
-  return new util$6.Array(size);
+Writer$1.alloc = function alloc(size2) {
+  return new util$6.Array(size2);
 };
 if (util$6.Array !== Array)
   Writer$1.alloc = util$6.pool(Writer$1.alloc, util$6.Array.prototype.subarray);
@@ -2119,41 +3436,41 @@ function requireDecoder() {
     return "missing required '" + field2.name + "'";
   }
   function decoder(mtype) {
-    var gen = util2.codegen(["r", "l", "e"], mtype.name + "$decode")("if(!(r instanceof Reader))")("r=Reader.create(r)")("var c=l===undefined?r.len:r.pos+l,m=new this.ctor" + (mtype.fieldsArray.filter(function(field3) {
+    var gen2 = util2.codegen(["r", "l", "e"], mtype.name + "$decode")("if(!(r instanceof Reader))")("r=Reader.create(r)")("var c=l===undefined?r.len:r.pos+l,m=new this.ctor" + (mtype.fieldsArray.filter(function(field3) {
       return field3.map;
     }).length ? ",k,value" : ""))("while(r.pos<c){")("var t=r.uint32()")("if(t===e)")("break")("switch(t>>>3){");
     var i = 0;
     for (; i < /* initializes */
     mtype.fieldsArray.length; ++i) {
       var field2 = mtype._fieldsArray[i].resolve(), type2 = field2.resolvedType instanceof Enum ? "int32" : field2.type, ref = "m" + util2.safeProp(field2.name);
-      gen("case %i: {", field2.id);
+      gen2("case %i: {", field2.id);
       if (field2.map) {
-        gen("if(%s===util.emptyObject)", ref)("%s={}", ref)("var c2 = r.uint32()+r.pos");
-        if (types2.defaults[field2.keyType] !== void 0) gen("k=%j", types2.defaults[field2.keyType]);
-        else gen("k=null");
-        if (types2.defaults[type2] !== void 0) gen("value=%j", types2.defaults[type2]);
-        else gen("value=null");
-        gen("while(r.pos<c2){")("var tag2=r.uint32()")("switch(tag2>>>3){")("case 1: k=r.%s(); break", field2.keyType)("case 2:");
-        if (types2.basic[type2] === void 0) gen("value=types[%i].decode(r,r.uint32())", i);
-        else gen("value=r.%s()", type2);
-        gen("break")("default:")("r.skipType(tag2&7)")("break")("}")("}");
-        if (types2.long[field2.keyType] !== void 0) gen('%s[typeof k==="object"?util.longToHash(k):k]=value', ref);
-        else gen("%s[k]=value", ref);
+        gen2("if(%s===util.emptyObject)", ref)("%s={}", ref)("var c2 = r.uint32()+r.pos");
+        if (types2.defaults[field2.keyType] !== void 0) gen2("k=%j", types2.defaults[field2.keyType]);
+        else gen2("k=null");
+        if (types2.defaults[type2] !== void 0) gen2("value=%j", types2.defaults[type2]);
+        else gen2("value=null");
+        gen2("while(r.pos<c2){")("var tag2=r.uint32()")("switch(tag2>>>3){")("case 1: k=r.%s(); break", field2.keyType)("case 2:");
+        if (types2.basic[type2] === void 0) gen2("value=types[%i].decode(r,r.uint32())", i);
+        else gen2("value=r.%s()", type2);
+        gen2("break")("default:")("r.skipType(tag2&7)")("break")("}")("}");
+        if (types2.long[field2.keyType] !== void 0) gen2('%s[typeof k==="object"?util.longToHash(k):k]=value', ref);
+        else gen2("%s[k]=value", ref);
       } else if (field2.repeated) {
-        gen("if(!(%s&&%s.length))", ref, ref)("%s=[]", ref);
-        if (types2.packed[type2] !== void 0) gen("if((t&7)===2){")("var c2=r.uint32()+r.pos")("while(r.pos<c2)")("%s.push(r.%s())", ref, type2)("}else");
-        if (types2.basic[type2] === void 0) gen(field2.delimited ? "%s.push(types[%i].decode(r,undefined,((t&~7)|4)))" : "%s.push(types[%i].decode(r,r.uint32()))", ref, i);
-        else gen("%s.push(r.%s())", ref, type2);
-      } else if (types2.basic[type2] === void 0) gen(field2.delimited ? "%s=types[%i].decode(r,undefined,((t&~7)|4))" : "%s=types[%i].decode(r,r.uint32())", ref, i);
-      else gen("%s=r.%s()", ref, type2);
-      gen("break")("}");
+        gen2("if(!(%s&&%s.length))", ref, ref)("%s=[]", ref);
+        if (types2.packed[type2] !== void 0) gen2("if((t&7)===2){")("var c2=r.uint32()+r.pos")("while(r.pos<c2)")("%s.push(r.%s())", ref, type2)("}else");
+        if (types2.basic[type2] === void 0) gen2(field2.delimited ? "%s.push(types[%i].decode(r,undefined,((t&~7)|4)))" : "%s.push(types[%i].decode(r,r.uint32()))", ref, i);
+        else gen2("%s.push(r.%s())", ref, type2);
+      } else if (types2.basic[type2] === void 0) gen2(field2.delimited ? "%s=types[%i].decode(r,undefined,((t&~7)|4))" : "%s=types[%i].decode(r,r.uint32())", ref, i);
+      else gen2("%s=r.%s()", ref, type2);
+      gen2("break")("}");
     }
-    gen("default:")("r.skipType(t&7)")("break")("}")("}");
+    gen2("default:")("r.skipType(t&7)")("break")("}")("}");
     for (i = 0; i < mtype._fieldsArray.length; ++i) {
       var rfield = mtype._fieldsArray[i];
-      if (rfield.required) gen("if(!m.hasOwnProperty(%j))", rfield.name)("throw util.ProtocolError(%j,{instance:m})", missing(rfield));
+      if (rfield.required) gen2("if(!m.hasOwnProperty(%j))", rfield.name)("throw util.ProtocolError(%j,{instance:m})", missing(rfield));
     }
-    return gen("return m");
+    return gen2("return m");
   }
   return decoder_1;
 }
@@ -2167,14 +3484,14 @@ function requireVerifier() {
   function invalid(field2, expected) {
     return field2.name + ": " + expected + (field2.repeated && expected !== "array" ? "[]" : field2.map && expected !== "object" ? "{k:" + field2.keyType + "}" : "") + " expected";
   }
-  function genVerifyValue(gen, field2, fieldIndex, ref) {
+  function genVerifyValue(gen2, field2, fieldIndex, ref) {
     if (field2.resolvedType) {
       if (field2.resolvedType instanceof Enum) {
-        gen("switch(%s){", ref)("default:")("return%j", invalid(field2, "enum value"));
-        for (var keys = Object.keys(field2.resolvedType.values), j = 0; j < keys.length; ++j) gen("case %i:", field2.resolvedType.values[keys[j]]);
-        gen("break")("}");
+        gen2("switch(%s){", ref)("default:")("return%j", invalid(field2, "enum value"));
+        for (var keys = Object.keys(field2.resolvedType.values), j = 0; j < keys.length; ++j) gen2("case %i:", field2.resolvedType.values[keys[j]]);
+        gen2("break")("}");
       } else {
-        gen("{")("var e=types[%i].verify(%s);", fieldIndex, ref)("if(e)")("return%j+e", field2.name + ".")("}");
+        gen2("{")("var e=types[%i].verify(%s);", fieldIndex, ref)("if(e)")("return%j+e", field2.name + ".")("}");
       }
     } else {
       switch (field2.type) {
@@ -2183,81 +3500,81 @@ function requireVerifier() {
         case "sint32":
         case "fixed32":
         case "sfixed32":
-          gen("if(!util.isInteger(%s))", ref)("return%j", invalid(field2, "integer"));
+          gen2("if(!util.isInteger(%s))", ref)("return%j", invalid(field2, "integer"));
           break;
         case "int64":
         case "uint64":
         case "sint64":
         case "fixed64":
         case "sfixed64":
-          gen("if(!util.isInteger(%s)&&!(%s&&util.isInteger(%s.low)&&util.isInteger(%s.high)))", ref, ref, ref, ref)("return%j", invalid(field2, "integer|Long"));
+          gen2("if(!util.isInteger(%s)&&!(%s&&util.isInteger(%s.low)&&util.isInteger(%s.high)))", ref, ref, ref, ref)("return%j", invalid(field2, "integer|Long"));
           break;
         case "float":
         case "double":
-          gen('if(typeof %s!=="number")', ref)("return%j", invalid(field2, "number"));
+          gen2('if(typeof %s!=="number")', ref)("return%j", invalid(field2, "number"));
           break;
         case "bool":
-          gen('if(typeof %s!=="boolean")', ref)("return%j", invalid(field2, "boolean"));
+          gen2('if(typeof %s!=="boolean")', ref)("return%j", invalid(field2, "boolean"));
           break;
         case "string":
-          gen("if(!util.isString(%s))", ref)("return%j", invalid(field2, "string"));
+          gen2("if(!util.isString(%s))", ref)("return%j", invalid(field2, "string"));
           break;
         case "bytes":
-          gen('if(!(%s&&typeof %s.length==="number"||util.isString(%s)))', ref, ref, ref)("return%j", invalid(field2, "buffer"));
+          gen2('if(!(%s&&typeof %s.length==="number"||util.isString(%s)))', ref, ref, ref)("return%j", invalid(field2, "buffer"));
           break;
       }
     }
-    return gen;
+    return gen2;
   }
-  function genVerifyKey(gen, field2, ref) {
+  function genVerifyKey(gen2, field2, ref) {
     switch (field2.keyType) {
       case "int32":
       case "uint32":
       case "sint32":
       case "fixed32":
       case "sfixed32":
-        gen("if(!util.key32Re.test(%s))", ref)("return%j", invalid(field2, "integer key"));
+        gen2("if(!util.key32Re.test(%s))", ref)("return%j", invalid(field2, "integer key"));
         break;
       case "int64":
       case "uint64":
       case "sint64":
       case "fixed64":
       case "sfixed64":
-        gen("if(!util.key64Re.test(%s))", ref)("return%j", invalid(field2, "integer|Long key"));
+        gen2("if(!util.key64Re.test(%s))", ref)("return%j", invalid(field2, "integer|Long key"));
         break;
       case "bool":
-        gen("if(!util.key2Re.test(%s))", ref)("return%j", invalid(field2, "boolean key"));
+        gen2("if(!util.key2Re.test(%s))", ref)("return%j", invalid(field2, "boolean key"));
         break;
     }
-    return gen;
+    return gen2;
   }
   function verifier(mtype) {
-    var gen = util2.codegen(["m"], mtype.name + "$verify")('if(typeof m!=="object"||m===null)')("return%j", "object expected");
+    var gen2 = util2.codegen(["m"], mtype.name + "$verify")('if(typeof m!=="object"||m===null)')("return%j", "object expected");
     var oneofs = mtype.oneofsArray, seenFirstField = {};
-    if (oneofs.length) gen("var p={}");
+    if (oneofs.length) gen2("var p={}");
     for (var i = 0; i < /* initializes */
     mtype.fieldsArray.length; ++i) {
       var field2 = mtype._fieldsArray[i].resolve(), ref = "m" + util2.safeProp(field2.name);
-      if (field2.optional) gen("if(%s!=null&&m.hasOwnProperty(%j)){", ref, field2.name);
+      if (field2.optional) gen2("if(%s!=null&&m.hasOwnProperty(%j)){", ref, field2.name);
       if (field2.map) {
-        gen("if(!util.isObject(%s))", ref)("return%j", invalid(field2, "object"))("var k=Object.keys(%s)", ref)("for(var i=0;i<k.length;++i){");
-        genVerifyKey(gen, field2, "k[i]");
-        genVerifyValue(gen, field2, i, ref + "[k[i]]")("}");
+        gen2("if(!util.isObject(%s))", ref)("return%j", invalid(field2, "object"))("var k=Object.keys(%s)", ref)("for(var i=0;i<k.length;++i){");
+        genVerifyKey(gen2, field2, "k[i]");
+        genVerifyValue(gen2, field2, i, ref + "[k[i]]")("}");
       } else if (field2.repeated) {
-        gen("if(!Array.isArray(%s))", ref)("return%j", invalid(field2, "array"))("for(var i=0;i<%s.length;++i){", ref);
-        genVerifyValue(gen, field2, i, ref + "[i]")("}");
+        gen2("if(!Array.isArray(%s))", ref)("return%j", invalid(field2, "array"))("for(var i=0;i<%s.length;++i){", ref);
+        genVerifyValue(gen2, field2, i, ref + "[i]")("}");
       } else {
         if (field2.partOf) {
           var oneofProp = util2.safeProp(field2.partOf.name);
-          if (seenFirstField[field2.partOf.name] === 1) gen("if(p%s===1)", oneofProp)("return%j", field2.partOf.name + ": multiple values");
+          if (seenFirstField[field2.partOf.name] === 1) gen2("if(p%s===1)", oneofProp)("return%j", field2.partOf.name + ": multiple values");
           seenFirstField[field2.partOf.name] = 1;
-          gen("p%s=1", oneofProp);
+          gen2("p%s=1", oneofProp);
         }
-        genVerifyValue(gen, field2, i, ref);
+        genVerifyValue(gen2, field2, i, ref);
       }
-      if (field2.optional) gen("}");
+      if (field2.optional) gen2("}");
     }
-    return gen("return null");
+    return gen2("return null");
   }
   return verifier_1;
 }
@@ -2269,36 +3586,36 @@ function requireConverter() {
   (function(exports2) {
     var converter2 = exports2;
     var Enum = require_enum(), util2 = requireUtil();
-    function genValuePartial_fromObject(gen, field2, fieldIndex, prop) {
+    function genValuePartial_fromObject(gen2, field2, fieldIndex, prop) {
       var defaultAlreadyEmitted = false;
       if (field2.resolvedType) {
         if (field2.resolvedType instanceof Enum) {
-          gen("switch(d%s){", prop);
+          gen2("switch(d%s){", prop);
           for (var values = field2.resolvedType.values, keys = Object.keys(values), i = 0; i < keys.length; ++i) {
             if (values[keys[i]] === field2.typeDefault && !defaultAlreadyEmitted) {
-              gen("default:")('if(typeof(d%s)==="number"){m%s=d%s;break}', prop, prop, prop);
-              if (!field2.repeated) gen("break");
+              gen2("default:")('if(typeof(d%s)==="number"){m%s=d%s;break}', prop, prop, prop);
+              if (!field2.repeated) gen2("break");
               defaultAlreadyEmitted = true;
             }
-            gen("case%j:", keys[i])("case %i:", values[keys[i]])("m%s=%j", prop, values[keys[i]])("break");
+            gen2("case%j:", keys[i])("case %i:", values[keys[i]])("m%s=%j", prop, values[keys[i]])("break");
           }
-          gen("}");
-        } else gen('if(typeof d%s!=="object")', prop)("throw TypeError(%j)", field2.fullName + ": object expected")("m%s=types[%i].fromObject(d%s)", prop, fieldIndex, prop);
+          gen2("}");
+        } else gen2('if(typeof d%s!=="object")', prop)("throw TypeError(%j)", field2.fullName + ": object expected")("m%s=types[%i].fromObject(d%s)", prop, fieldIndex, prop);
       } else {
         var isUnsigned = false;
         switch (field2.type) {
           case "double":
           case "float":
-            gen("m%s=Number(d%s)", prop, prop);
+            gen2("m%s=Number(d%s)", prop, prop);
             break;
           case "uint32":
           case "fixed32":
-            gen("m%s=d%s>>>0", prop, prop);
+            gen2("m%s=d%s>>>0", prop, prop);
             break;
           case "int32":
           case "sint32":
           case "sfixed32":
-            gen("m%s=d%s|0", prop, prop);
+            gen2("m%s=d%s|0", prop, prop);
             break;
           case "uint64":
             isUnsigned = true;
@@ -2306,70 +3623,70 @@ function requireConverter() {
           case "sint64":
           case "fixed64":
           case "sfixed64":
-            gen("if(util.Long)")("(m%s=util.Long.fromValue(d%s)).unsigned=%j", prop, prop, isUnsigned)('else if(typeof d%s==="string")', prop)("m%s=parseInt(d%s,10)", prop, prop)('else if(typeof d%s==="number")', prop)("m%s=d%s", prop, prop)('else if(typeof d%s==="object")', prop)("m%s=new util.LongBits(d%s.low>>>0,d%s.high>>>0).toNumber(%s)", prop, prop, prop, isUnsigned ? "true" : "");
+            gen2("if(util.Long)")("(m%s=util.Long.fromValue(d%s)).unsigned=%j", prop, prop, isUnsigned)('else if(typeof d%s==="string")', prop)("m%s=parseInt(d%s,10)", prop, prop)('else if(typeof d%s==="number")', prop)("m%s=d%s", prop, prop)('else if(typeof d%s==="object")', prop)("m%s=new util.LongBits(d%s.low>>>0,d%s.high>>>0).toNumber(%s)", prop, prop, prop, isUnsigned ? "true" : "");
             break;
           case "bytes":
-            gen('if(typeof d%s==="string")', prop)("util.base64.decode(d%s,m%s=util.newBuffer(util.base64.length(d%s)),0)", prop, prop, prop)("else if(d%s.length >= 0)", prop)("m%s=d%s", prop, prop);
+            gen2('if(typeof d%s==="string")', prop)("util.base64.decode(d%s,m%s=util.newBuffer(util.base64.length(d%s)),0)", prop, prop, prop)("else if(d%s.length >= 0)", prop)("m%s=d%s", prop, prop);
             break;
           case "string":
-            gen("m%s=String(d%s)", prop, prop);
+            gen2("m%s=String(d%s)", prop, prop);
             break;
           case "bool":
-            gen("m%s=Boolean(d%s)", prop, prop);
+            gen2("m%s=Boolean(d%s)", prop, prop);
             break;
         }
       }
-      return gen;
+      return gen2;
     }
     converter2.fromObject = function fromObject2(mtype) {
       var fields = mtype.fieldsArray;
-      var gen = util2.codegen(["d"], mtype.name + "$fromObject")("if(d instanceof this.ctor)")("return d");
-      if (!fields.length) return gen("return new this.ctor");
-      gen("var m=new this.ctor");
+      var gen2 = util2.codegen(["d"], mtype.name + "$fromObject")("if(d instanceof this.ctor)")("return d");
+      if (!fields.length) return gen2("return new this.ctor");
+      gen2("var m=new this.ctor");
       for (var i = 0; i < fields.length; ++i) {
         var field2 = fields[i].resolve(), prop = util2.safeProp(field2.name);
         if (field2.map) {
-          gen("if(d%s){", prop)('if(typeof d%s!=="object")', prop)("throw TypeError(%j)", field2.fullName + ": object expected")("m%s={}", prop)("for(var ks=Object.keys(d%s),i=0;i<ks.length;++i){", prop);
+          gen2("if(d%s){", prop)('if(typeof d%s!=="object")', prop)("throw TypeError(%j)", field2.fullName + ": object expected")("m%s={}", prop)("for(var ks=Object.keys(d%s),i=0;i<ks.length;++i){", prop);
           genValuePartial_fromObject(
-            gen,
+            gen2,
             field2,
             /* not sorted */
             i,
             prop + "[ks[i]]"
           )("}")("}");
         } else if (field2.repeated) {
-          gen("if(d%s){", prop)("if(!Array.isArray(d%s))", prop)("throw TypeError(%j)", field2.fullName + ": array expected")("m%s=[]", prop)("for(var i=0;i<d%s.length;++i){", prop);
+          gen2("if(d%s){", prop)("if(!Array.isArray(d%s))", prop)("throw TypeError(%j)", field2.fullName + ": array expected")("m%s=[]", prop)("for(var i=0;i<d%s.length;++i){", prop);
           genValuePartial_fromObject(
-            gen,
+            gen2,
             field2,
             /* not sorted */
             i,
             prop + "[i]"
           )("}")("}");
         } else {
-          if (!(field2.resolvedType instanceof Enum)) gen("if(d%s!=null){", prop);
+          if (!(field2.resolvedType instanceof Enum)) gen2("if(d%s!=null){", prop);
           genValuePartial_fromObject(
-            gen,
+            gen2,
             field2,
             /* not sorted */
             i,
             prop
           );
-          if (!(field2.resolvedType instanceof Enum)) gen("}");
+          if (!(field2.resolvedType instanceof Enum)) gen2("}");
         }
       }
-      return gen("return m");
+      return gen2("return m");
     };
-    function genValuePartial_toObject(gen, field2, fieldIndex, prop) {
+    function genValuePartial_toObject(gen2, field2, fieldIndex, prop) {
       if (field2.resolvedType) {
-        if (field2.resolvedType instanceof Enum) gen("d%s=o.enums===String?(types[%i].values[m%s]===undefined?m%s:types[%i].values[m%s]):m%s", prop, fieldIndex, prop, prop, fieldIndex, prop, prop);
-        else gen("d%s=types[%i].toObject(m%s,o)", prop, fieldIndex, prop);
+        if (field2.resolvedType instanceof Enum) gen2("d%s=o.enums===String?(types[%i].values[m%s]===undefined?m%s:types[%i].values[m%s]):m%s", prop, fieldIndex, prop, prop, fieldIndex, prop, prop);
+        else gen2("d%s=types[%i].toObject(m%s,o)", prop, fieldIndex, prop);
       } else {
         var isUnsigned = false;
         switch (field2.type) {
           case "double":
           case "float":
-            gen("d%s=o.json&&!isFinite(m%s)?String(m%s):m%s", prop, prop, prop, prop);
+            gen2("d%s=o.json&&!isFinite(m%s)?String(m%s):m%s", prop, prop, prop, prop);
             break;
           case "uint64":
             isUnsigned = true;
@@ -2377,49 +3694,49 @@ function requireConverter() {
           case "sint64":
           case "fixed64":
           case "sfixed64":
-            gen('if(typeof m%s==="number")', prop)("d%s=o.longs===String?String(m%s):m%s", prop, prop, prop)("else")("d%s=o.longs===String?util.Long.prototype.toString.call(m%s):o.longs===Number?new util.LongBits(m%s.low>>>0,m%s.high>>>0).toNumber(%s):m%s", prop, prop, prop, prop, isUnsigned ? "true" : "", prop);
+            gen2('if(typeof m%s==="number")', prop)("d%s=o.longs===String?String(m%s):m%s", prop, prop, prop)("else")("d%s=o.longs===String?util.Long.prototype.toString.call(m%s):o.longs===Number?new util.LongBits(m%s.low>>>0,m%s.high>>>0).toNumber(%s):m%s", prop, prop, prop, prop, isUnsigned ? "true" : "", prop);
             break;
           case "bytes":
-            gen("d%s=o.bytes===String?util.base64.encode(m%s,0,m%s.length):o.bytes===Array?Array.prototype.slice.call(m%s):m%s", prop, prop, prop, prop, prop);
+            gen2("d%s=o.bytes===String?util.base64.encode(m%s,0,m%s.length):o.bytes===Array?Array.prototype.slice.call(m%s):m%s", prop, prop, prop, prop, prop);
             break;
           default:
-            gen("d%s=m%s", prop, prop);
+            gen2("d%s=m%s", prop, prop);
             break;
         }
       }
-      return gen;
+      return gen2;
     }
     converter2.toObject = function toObject2(mtype) {
       var fields = mtype.fieldsArray.slice().sort(util2.compareFieldsById);
       if (!fields.length)
         return util2.codegen()("return {}");
-      var gen = util2.codegen(["m", "o"], mtype.name + "$toObject")("if(!o)")("o={}")("var d={}");
+      var gen2 = util2.codegen(["m", "o"], mtype.name + "$toObject")("if(!o)")("o={}")("var d={}");
       var repeatedFields = [], mapFields = [], normalFields = [], i = 0;
       for (; i < fields.length; ++i)
         if (!fields[i].partOf)
           (fields[i].resolve().repeated ? repeatedFields : fields[i].map ? mapFields : normalFields).push(fields[i]);
       if (repeatedFields.length) {
-        gen("if(o.arrays||o.defaults){");
-        for (i = 0; i < repeatedFields.length; ++i) gen("d%s=[]", util2.safeProp(repeatedFields[i].name));
-        gen("}");
+        gen2("if(o.arrays||o.defaults){");
+        for (i = 0; i < repeatedFields.length; ++i) gen2("d%s=[]", util2.safeProp(repeatedFields[i].name));
+        gen2("}");
       }
       if (mapFields.length) {
-        gen("if(o.objects||o.defaults){");
-        for (i = 0; i < mapFields.length; ++i) gen("d%s={}", util2.safeProp(mapFields[i].name));
-        gen("}");
+        gen2("if(o.objects||o.defaults){");
+        for (i = 0; i < mapFields.length; ++i) gen2("d%s={}", util2.safeProp(mapFields[i].name));
+        gen2("}");
       }
       if (normalFields.length) {
-        gen("if(o.defaults){");
+        gen2("if(o.defaults){");
         for (i = 0; i < normalFields.length; ++i) {
           var field2 = normalFields[i], prop = util2.safeProp(field2.name);
-          if (field2.resolvedType instanceof Enum) gen("d%s=o.enums===String?%j:%j", prop, field2.resolvedType.valuesById[field2.typeDefault], field2.typeDefault);
-          else if (field2.long) gen("if(util.Long){")("var n=new util.Long(%i,%i,%j)", field2.typeDefault.low, field2.typeDefault.high, field2.typeDefault.unsigned)("d%s=o.longs===String?n.toString():o.longs===Number?n.toNumber():n", prop)("}else")("d%s=o.longs===String?%j:%i", prop, field2.typeDefault.toString(), field2.typeDefault.toNumber());
+          if (field2.resolvedType instanceof Enum) gen2("d%s=o.enums===String?%j:%j", prop, field2.resolvedType.valuesById[field2.typeDefault], field2.typeDefault);
+          else if (field2.long) gen2("if(util.Long){")("var n=new util.Long(%i,%i,%j)", field2.typeDefault.low, field2.typeDefault.high, field2.typeDefault.unsigned)("d%s=o.longs===String?n.toString():o.longs===Number?n.toNumber():n", prop)("}else")("d%s=o.longs===String?%j:%i", prop, field2.typeDefault.toString(), field2.typeDefault.toNumber());
           else if (field2.bytes) {
             var arrayDefault = "[" + Array.prototype.slice.call(field2.typeDefault).join(",") + "]";
-            gen("if(o.bytes===String)d%s=%j", prop, String.fromCharCode.apply(String, field2.typeDefault))("else{")("d%s=%s", prop, arrayDefault)("if(o.bytes!==Array)d%s=util.newBuffer(d%s)", prop, prop)("}");
-          } else gen("d%s=%j", prop, field2.typeDefault);
+            gen2("if(o.bytes===String)d%s=%j", prop, String.fromCharCode.apply(String, field2.typeDefault))("else{")("d%s=%s", prop, arrayDefault)("if(o.bytes!==Array)d%s=util.newBuffer(d%s)", prop, prop)("}");
+          } else gen2("d%s=%j", prop, field2.typeDefault);
         }
-        gen("}");
+        gen2("}");
       }
       var hasKs2 = false;
       for (i = 0; i < fields.length; ++i) {
@@ -2427,39 +3744,39 @@ function requireConverter() {
         if (field2.map) {
           if (!hasKs2) {
             hasKs2 = true;
-            gen("var ks2");
+            gen2("var ks2");
           }
-          gen("if(m%s&&(ks2=Object.keys(m%s)).length){", prop, prop)("d%s={}", prop)("for(var j=0;j<ks2.length;++j){");
+          gen2("if(m%s&&(ks2=Object.keys(m%s)).length){", prop, prop)("d%s={}", prop)("for(var j=0;j<ks2.length;++j){");
           genValuePartial_toObject(
-            gen,
+            gen2,
             field2,
             /* sorted */
             index,
             prop + "[ks2[j]]"
           )("}");
         } else if (field2.repeated) {
-          gen("if(m%s&&m%s.length){", prop, prop)("d%s=[]", prop)("for(var j=0;j<m%s.length;++j){", prop);
+          gen2("if(m%s&&m%s.length){", prop, prop)("d%s=[]", prop)("for(var j=0;j<m%s.length;++j){", prop);
           genValuePartial_toObject(
-            gen,
+            gen2,
             field2,
             /* sorted */
             index,
             prop + "[j]"
           )("}");
         } else {
-          gen("if(m%s!=null&&m.hasOwnProperty(%j)){", prop, field2.name);
+          gen2("if(m%s!=null&&m.hasOwnProperty(%j)){", prop, field2.name);
           genValuePartial_toObject(
-            gen,
+            gen2,
             field2,
             /* sorted */
             index,
             prop
           );
-          if (field2.partOf) gen("if(o.oneofs)")("d%s=%j", util2.safeProp(field2.partOf.name), field2.name);
+          if (field2.partOf) gen2("if(o.oneofs)")("d%s=%j", util2.safeProp(field2.partOf.name), field2.name);
         }
-        gen("}");
+        gen2("}");
       }
-      return gen("return d");
+      return gen2("return d");
     };
   })(converter);
   return converter;
@@ -2519,7 +3836,7 @@ function requireType() {
   type = Type;
   var Namespace = requireNamespace();
   ((Type.prototype = Object.create(Namespace.prototype)).constructor = Type).className = "Type";
-  var Enum = require_enum(), OneOf = requireOneof(), Field = requireField(), MapField = requireMapfield(), Service2 = requireService(), Message2 = message, Reader2 = reader, Writer2 = writer, util2 = requireUtil(), encoder = requireEncoder(), decoder = requireDecoder(), verifier = requireVerifier(), converter2 = requireConverter(), wrappers$1 = wrappers;
+  var Enum = require_enum(), OneOf = requireOneof(), Field = requireField(), MapField = requireMapfield(), Service2 = requireService(), Message2 = message, Reader2 = reader, Writer2 = writer, util2 = requireUtil(), encoder2 = requireEncoder(), decoder = requireDecoder(), verifier = requireVerifier(), converter2 = requireConverter(), wrappers$1 = wrappers;
   function Type(name, options) {
     Namespace.call(this, name, options);
     this.fields = {};
@@ -2611,11 +3928,11 @@ function requireType() {
     }
   });
   Type.generateConstructor = function generateConstructor(mtype) {
-    var gen = util2.codegen(["p"], mtype.name);
+    var gen2 = util2.codegen(["p"], mtype.name);
     for (var i = 0, field2; i < mtype.fieldsArray.length; ++i)
-      if ((field2 = mtype._fieldsArray[i]).map) gen("this%s={}", util2.safeProp(field2.name));
-      else if (field2.repeated) gen("this%s=[]", util2.safeProp(field2.name));
-    return gen("if(p)for(var ks=Object.keys(p),i=0;i<ks.length;++i)if(p[ks[i]]!=null)")("this[ks[i]]=p[ks[i]]");
+      if ((field2 = mtype._fieldsArray[i]).map) gen2("this%s={}", util2.safeProp(field2.name));
+      else if (field2.repeated) gen2("this%s=[]", util2.safeProp(field2.name));
+    return gen2("if(p)for(var ks=Object.keys(p),i=0;i<ks.length;++i)if(p[ks[i]]!=null)")("this[ks[i]]=p[ks[i]]");
   };
   function clearCache(type2) {
     type2._fieldsById = type2._fieldsArray = type2._oneofsArray = null;
@@ -2772,7 +4089,7 @@ function requireType() {
     for (var i = 0; i < /* initializes */
     this.fieldsArray.length; ++i)
       types2.push(this._fieldsArray[i].resolve().resolvedType);
-    this.encode = encoder(this)({
+    this.encode = encoder2(this)({
       Writer: Writer2,
       types: types2,
       util: util2
@@ -3983,13 +5300,13 @@ var hasRequiredEncoder;
 function requireEncoder() {
   if (hasRequiredEncoder) return encoder_1;
   hasRequiredEncoder = 1;
-  encoder_1 = encoder;
+  encoder_1 = encoder2;
   var Enum = require_enum(), types2 = requireTypes(), util2 = requireUtil();
-  function genTypePartial(gen, field2, fieldIndex, ref) {
-    return field2.delimited ? gen("types[%i].encode(%s,w.uint32(%i)).uint32(%i)", fieldIndex, ref, (field2.id << 3 | 3) >>> 0, (field2.id << 3 | 4) >>> 0) : gen("types[%i].encode(%s,w.uint32(%i).fork()).ldelim()", fieldIndex, ref, (field2.id << 3 | 2) >>> 0);
+  function genTypePartial(gen2, field2, fieldIndex, ref) {
+    return field2.delimited ? gen2("types[%i].encode(%s,w.uint32(%i)).uint32(%i)", fieldIndex, ref, (field2.id << 3 | 3) >>> 0, (field2.id << 3 | 4) >>> 0) : gen2("types[%i].encode(%s,w.uint32(%i).fork()).ldelim()", fieldIndex, ref, (field2.id << 3 | 2) >>> 0);
   }
-  function encoder(mtype) {
-    var gen = util2.codegen(["m", "w"], mtype.name + "$encode")("if(!w)")("w=Writer.create()");
+  function encoder2(mtype) {
+    var gen2 = util2.codegen(["m", "w"], mtype.name + "$encode")("if(!w)")("w=Writer.create()");
     var i, ref;
     var fields = (
       /* initializes */
@@ -3999,29 +5316,29 @@ function requireEncoder() {
       var field2 = fields[i].resolve(), index = mtype._fieldsArray.indexOf(field2), type2 = field2.resolvedType instanceof Enum ? "int32" : field2.type, wireType = types2.basic[type2];
       ref = "m" + util2.safeProp(field2.name);
       if (field2.map) {
-        gen("if(%s!=null&&Object.hasOwnProperty.call(m,%j)){", ref, field2.name)("for(var ks=Object.keys(%s),i=0;i<ks.length;++i){", ref)("w.uint32(%i).fork().uint32(%i).%s(ks[i])", (field2.id << 3 | 2) >>> 0, 8 | types2.mapKey[field2.keyType], field2.keyType);
-        if (wireType === void 0) gen("types[%i].encode(%s[ks[i]],w.uint32(18).fork()).ldelim().ldelim()", index, ref);
-        else gen(".uint32(%i).%s(%s[ks[i]]).ldelim()", 16 | wireType, type2, ref);
-        gen("}")("}");
+        gen2("if(%s!=null&&Object.hasOwnProperty.call(m,%j)){", ref, field2.name)("for(var ks=Object.keys(%s),i=0;i<ks.length;++i){", ref)("w.uint32(%i).fork().uint32(%i).%s(ks[i])", (field2.id << 3 | 2) >>> 0, 8 | types2.mapKey[field2.keyType], field2.keyType);
+        if (wireType === void 0) gen2("types[%i].encode(%s[ks[i]],w.uint32(18).fork()).ldelim().ldelim()", index, ref);
+        else gen2(".uint32(%i).%s(%s[ks[i]]).ldelim()", 16 | wireType, type2, ref);
+        gen2("}")("}");
       } else if (field2.repeated) {
-        gen("if(%s!=null&&%s.length){", ref, ref);
+        gen2("if(%s!=null&&%s.length){", ref, ref);
         if (field2.packed && types2.packed[type2] !== void 0) {
-          gen("w.uint32(%i).fork()", (field2.id << 3 | 2) >>> 0)("for(var i=0;i<%s.length;++i)", ref)("w.%s(%s[i])", type2, ref)("w.ldelim()");
+          gen2("w.uint32(%i).fork()", (field2.id << 3 | 2) >>> 0)("for(var i=0;i<%s.length;++i)", ref)("w.%s(%s[i])", type2, ref)("w.ldelim()");
         } else {
-          gen("for(var i=0;i<%s.length;++i)", ref);
+          gen2("for(var i=0;i<%s.length;++i)", ref);
           if (wireType === void 0)
-            genTypePartial(gen, field2, index, ref + "[i]");
-          else gen("w.uint32(%i).%s(%s[i])", (field2.id << 3 | wireType) >>> 0, type2, ref);
+            genTypePartial(gen2, field2, index, ref + "[i]");
+          else gen2("w.uint32(%i).%s(%s[i])", (field2.id << 3 | wireType) >>> 0, type2, ref);
         }
-        gen("}");
+        gen2("}");
       } else {
-        if (field2.optional) gen("if(%s!=null&&Object.hasOwnProperty.call(m,%j))", ref, field2.name);
+        if (field2.optional) gen2("if(%s!=null&&Object.hasOwnProperty.call(m,%j))", ref, field2.name);
         if (wireType === void 0)
-          genTypePartial(gen, field2, index, ref);
-        else gen("w.uint32(%i).%s(%s)", (field2.id << 3 | wireType) >>> 0, type2, ref);
+          genTypePartial(gen2, field2, index, ref);
+        else gen2("w.uint32(%i).%s(%s)", (field2.id << 3 | wireType) >>> 0, type2, ref);
       }
     }
-    return gen("return w");
+    return gen2("return w");
   }
   return encoder_1;
 }
@@ -4144,13 +5461,6 @@ function bytesToHex(u8) {
   }
   return hex.join("");
 }
-const tryCatch = (fn) => {
-  try {
-    return [fn(), null];
-  } catch (e) {
-    return [null, e];
-  }
-};
 function bind(fn, thisArg) {
   return function wrap() {
     return fn.apply(thisArg, arguments);
@@ -4750,9 +6060,9 @@ const prototype = AxiosURLSearchParams.prototype;
 prototype.append = function append(name, value) {
   this._pairs.push([name, value]);
 };
-prototype.toString = function toString2(encoder) {
-  const _encode = encoder ? function(value) {
-    return encoder.call(this, value, encode$1);
+prototype.toString = function toString2(encoder2) {
+  const _encode = encoder2 ? function(value) {
+    return encoder2.call(this, value, encode$1);
   } : encode$1;
   return this._pairs.map(function each(pair) {
     return _encode(pair[0]) + "=" + _encode(pair[1]);
@@ -4947,7 +6257,7 @@ function formDataToJSON(formData) {
   }
   return null;
 }
-function stringifySafely(rawValue, parser, encoder) {
+function stringifySafely(rawValue, parser, encoder2) {
   if (utils$1.isString(rawValue)) {
     try {
       (parser || JSON.parse)(rawValue);
@@ -4958,7 +6268,7 @@ function stringifySafely(rawValue, parser, encoder) {
       }
     }
   }
-  return (encoder || JSON.stringify)(rawValue);
+  return (encoder2 || JSON.stringify)(rawValue);
 }
 const defaults = {
   transitional: transitionalDefaults,
@@ -5867,7 +7177,7 @@ const globalFetchAPI = (({ Request, Response }) => ({
 }))(utils$1.global);
 const {
   ReadableStream: ReadableStream$1,
-  TextEncoder
+  TextEncoder: TextEncoder$1
 } = utils$1.global;
 const test = (fn, ...args) => {
   try {
@@ -5888,7 +7198,7 @@ const factory = (env) => {
     return false;
   }
   const isReadableStreamSupported = isFetchSupported && isFunction(ReadableStream$1);
-  const encodeText = isFetchSupported && (typeof TextEncoder === "function" ? /* @__PURE__ */ ((encoder) => (str) => encoder.encode(str))(new TextEncoder()) : async (str) => new Uint8Array(await new Request(str).arrayBuffer()));
+  const encodeText = isFetchSupported && (typeof TextEncoder$1 === "function" ? /* @__PURE__ */ ((encoder2) => (str) => encoder2.encode(str))(new TextEncoder$1()) : async (str) => new Uint8Array(await new Request(str).arrayBuffer()));
   const supportsRequestStream = isRequestSupported && isReadableStreamSupported && test(() => {
     let duplexAccessed = false;
     const hasContentType = new Request(platform.origin, {
@@ -6171,23 +7481,23 @@ const validators$1 = {};
   };
 });
 const deprecatedWarnings = {};
-validators$1.transitional = function transitional(validator2, version, message2) {
+validators$1.transitional = function transitional(validator2, version2, message2) {
   function formatMessage(opt, desc) {
     return "[Axios v" + VERSION$1 + "] Transitional option '" + opt + "'" + desc + (message2 ? ". " + message2 : "");
   }
   return (value, opt, opts) => {
     if (validator2 === false) {
       throw new AxiosError$1(
-        formatMessage(opt, " has been removed" + (version ? " in " + version : "")),
+        formatMessage(opt, " has been removed" + (version2 ? " in " + version2 : "")),
         AxiosError$1.ERR_DEPRECATED
       );
     }
-    if (version && !deprecatedWarnings[opt]) {
+    if (version2 && !deprecatedWarnings[opt]) {
       deprecatedWarnings[opt] = true;
       console.warn(
         formatMessage(
           opt,
-          " has been deprecated since v" + version + " and will be removed in the near future"
+          " has been deprecated since v" + version2 + " and will be removed in the near future"
         )
       );
     }
@@ -6653,11 +7963,13 @@ const FALLBACK_CALL_GAS_LIMIT = 900000n;
 const MIN_VERIFICATION_GAS_LIMIT = 1200000n;
 const PRE_VERIFICATION_GAS = 90000n;
 const withMargin = (value, marginPct = 25n) => value + value * marginPct / 100n;
-const createUserOp = async ({ account, chainId, calls }, config) => {
+const createUserOp = async (config, account, calls) => {
+  const chainId = account.client.chain.id;
   const publicClient = config.getPublicClient(chainId);
   if (!publicClient) {
     throw new Error(`Public client not found for chain ${chainId}`);
   }
+  account.client.chain?.id;
   const callGasEstimates = await Promise.all(
     calls.map(
       (call) => publicClient.estimateGas({
@@ -6706,28 +8018,85 @@ const createUserOp = async ({ account, chainId, calls }, config) => {
     paymaster
   };
 };
-exports._percentageFormatter = _percentageFormatter;
-exports.bigintAbs = bigintAbs;
-exports.bigintFloor = bigintFloor;
-exports.bigintFormatter = bigintFormatter;
-exports.bigintMax = bigintMax;
-exports.bigintMin = bigintMin;
-exports.bigintRound = bigintRound;
-exports.bigintifyNumbers = bigintifyNumbers;
-exports.createAbiEncoder = createAbiEncoder;
+exports.BaseError = BaseError;
+exports.ChainDoesNotSupportContract = ChainDoesNotSupportContract;
+exports.ClientChainNotConfiguredError = ClientChainNotConfiguredError;
+exports.ExecutionRevertedError = ExecutionRevertedError;
+exports.FeeCapTooHighError = FeeCapTooHighError;
+exports.FeeCapTooLowError = FeeCapTooLowError;
+exports.FeeConflictError = FeeConflictError;
+exports.Hash = Hash;
+exports.InsufficientFundsError = InsufficientFundsError;
+exports.IntegerOutOfRangeError = IntegerOutOfRangeError;
+exports.IntrinsicGasTooHighError = IntrinsicGasTooHighError;
+exports.IntrinsicGasTooLowError = IntrinsicGasTooLowError;
+exports.InvalidAddressError = InvalidAddressError;
+exports.InvalidBytesBooleanError = InvalidBytesBooleanError;
+exports.InvalidBytesLengthError = InvalidBytesLengthError;
+exports.InvalidChainIdError = InvalidChainIdError;
+exports.InvalidLegacyVError = InvalidLegacyVError;
+exports.InvalidSerializableTransactionError = InvalidSerializableTransactionError;
+exports.InvalidStorageKeySizeError = InvalidStorageKeySizeError;
+exports.KERNEL_NAME = KERNEL_NAME;
+exports.KERNEL_V3_1 = KERNEL_V3_1;
+exports.KernelVersionToAddressesMap = KernelVersionToAddressesMap;
+exports.LruMap = LruMap;
+exports.MAGIC_VALUE_SIG_REPLAYABLE = MAGIC_VALUE_SIG_REPLAYABLE;
+exports.NonceMaxValueError = NonceMaxValueError;
+exports.NonceTooHighError = NonceTooHighError;
+exports.NonceTooLowError = NonceTooLowError;
+exports.TipAboveFeeCapError = TipAboveFeeCapError;
+exports.TransactionTypeNotSupportedError = TransactionTypeNotSupportedError;
+exports.UnknownNodeError = UnknownNodeError;
+exports.VALIDATOR_TYPE = VALIDATOR_TYPE;
+exports.abytes = abytes;
+exports.aexists = aexists;
+exports.ahash = ahash;
+exports.anumber = anumber;
+exports.aoutput = aoutput;
+exports.assertSize = assertSize;
+exports.boolToHex = boolToHex;
+exports.bytesToHex = bytesToHex$1;
+exports.checksumAddress = checksumAddress;
+exports.clean = clean;
+exports.commonjsGlobal = commonjsGlobal;
+exports.composeRollupsContracts = composeRollupsContracts;
+exports.concat = concat;
+exports.concatBytes = concatBytes;
+exports.concatHex = concatHex;
+exports.createCursor = createCursor;
+exports.createHasher = createHasher;
 exports.createUserOp = createUserOp;
+exports.createView = createView;
 exports.encodeXtMessage = encodeXtMessage;
-exports.ethFormatter = ethFormatter;
-exports.extractAbiFunction = extractAbiFunction;
-exports.formatBigintInput = formatBigintInput;
-exports.formatSSV = formatSSV;
-exports.isBigIntChanged = isBigIntChanged;
-exports.ms = ms;
-exports.numberFormatter = numberFormatter;
-exports.paramsToArray = paramsToArray;
-exports.percentageFormatter = percentageFormatter;
-exports.roundOperatorFee = roundOperatorFee;
-exports.sortNumbers = sortNumbers;
-exports.stringifyBigints = stringifyBigints;
-exports.toRpcUserOpCanonical = toRpcUserOpCanonical;
-exports.tryCatch = tryCatch;
+exports.entryPoint07Address = entryPoint07Address;
+exports.entryPointV07 = entryPointV07;
+exports.etherUnits = etherUnits;
+exports.formatGwei = formatGwei;
+exports.formatUnits = formatUnits;
+exports.getAddress = getAddress;
+exports.getAugmentedNamespace = getAugmentedNamespace;
+exports.hexToBigInt = hexToBigInt;
+exports.hexToBytes = hexToBytes;
+exports.hexToNumber = hexToNumber;
+exports.isAddress = isAddress;
+exports.isHex = isHex;
+exports.keccak256 = keccak256;
+exports.maxUint256 = maxUint256;
+exports.numberToHex = numberToHex;
+exports.pad = pad;
+exports.padHex = padHex;
+exports.prettyPrint = prettyPrint;
+exports.randomBytes = randomBytes;
+exports.rollupsAccountAbstractionContracts = rollupsAccountAbstractionContracts;
+exports.rotr = rotr;
+exports.safeCreateCallAddress = safeCreateCallAddress;
+exports.size = size;
+exports.slice = slice;
+exports.sliceBytes = sliceBytes;
+exports.stringToHex = stringToHex;
+exports.toBytes = toBytes$1;
+exports.toBytes$1 = toBytes;
+exports.toHex = toHex;
+exports.toRlp = toRlp;
+exports.trim = trim$1;

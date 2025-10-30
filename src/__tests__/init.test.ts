@@ -1,23 +1,11 @@
 import { rollupA, rollupB } from '@/config/chains';
 import { createComposeConfig } from '@/config/create';
 import { rollupsAccountAbstractionContracts } from '@/config/deafults';
-import type { ComposedSignedUserOpsTxReturnType, toRpcUserOpCanonical } from '@/utils/smart-account/user-op';
+import type { ComposeRpcSchema } from '@/types/compose';
 import { createConfig, http } from '@wagmi/core';
 import { createPublicClient, rpcSchema } from 'viem';
 import { describe, expect, it } from 'vitest';
 
-type ComposeRpcSchema = [
-  {
-    Method: 'eth_sendXTransaction';
-    Parameters: [string];
-    ReturnType: null;
-  },
-  {
-    Method: 'compose_buildSignedUserOpsTx';
-    Parameters: [ReturnType<typeof toRpcUserOpCanonical>[], { chainId: number }];
-    ReturnType: ComposedSignedUserOpsTxReturnType;
-  }
-];
 
 describe('createComposeConfig initialization', () => {
   it('should initialize compose config with rollup chains', () => {

@@ -19,7 +19,7 @@ export function ComposeProvider<TConfig extends Config>({
   return <ComposeContext.Provider value={config}>{children}</ComposeContext.Provider>;
 }
 
-export function useCompose<TConfig extends Config>(): ComposeContextValue<TConfig> {
+export function useComposeConfig<TConfig extends Config>(): ComposeContextValue<TConfig> {
   const context = useContext(ComposeContext);
   if (!context) {
     throw new Error('useCompose must be used within a ComposeProvider');
