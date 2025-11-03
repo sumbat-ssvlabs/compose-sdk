@@ -1,5 +1,5 @@
 export * from './chains'
 export * from './create'
-export * from './deafults'
+export * from './defaults'
 export * from './globals'
 

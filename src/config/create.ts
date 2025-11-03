@@ -1,8 +1,10 @@
-// import type { ConfigArgs } from '@/utils/zod/config';
-
+import { entryPointV07 } from '@/config/defaults';
+import type { ComposeRpcSchema } from '@/types/compose';
 import type { Config } from '@wagmi/core';
 import { getPublicClient } from '@wagmi/core';
-import type { PublicClient } from 'viem';
+import type { EntryPointType } from '@zerodev/sdk/types';
+import type { Account, Chain, PublicClient, Transport } from 'viem';
+import type { EntryPointVersion } from 'viem/account-abstraction';
 
 type PaymasterEndpointArgs<TConfig extends Config> = {
   method: 'pm_getPaymasterStubData' | 'pm_getPaymasterData' | 'pm_sponsorUserOperation';
@@ -23,8 +25,11 @@ type ComposeConfigArgs<TConfig extends Config> = {
 };
 
 export type ComposeConfigReturnType<TConfig extends Config = Config> = {
-  getPublicClient: (chainId: TConfig['chains'][number]['id']) => PublicClient;
+  getPublicClient: (
+    chainId: TConfig['chains'][number]['id']
+  ) => PublicClient<Transport, Chain, Account, ComposeRpcSchema>;
   hasPaymaster: boolean;
+  entryPoint: EntryPointType<EntryPointVersion>;
 } & Pick<ComposeConfigArgs<TConfig>, 'getPaymasterEndpoint' | 'accountAbstractionContracts'>;
 
 export function createComposeConfig<TConfig extends Config>(
@@ -32,8 +37,9 @@ export function createComposeConfig<TConfig extends Config>(
 ): ComposeConfigReturnType<TConfig> {
   return {
     getPaymasterEndpoint: props.getPaymasterEndpoint,
-    getPublicClient: (chainId) => getPublicClient(props.wagmi, { chainId }) as PublicClient,
+    getPublicClient: (chainId) => getPublicClient(props.wagmi, { chainId }) as unknown as PublicClient<Transport, Chain, Account, ComposeRpcSchema>,
     accountAbstractionContracts: props.accountAbstractionContracts,
-    hasPaymaster: Boolean(props.getPaymasterEndpoint)
+    hasPaymaster: Boolean(props.getPaymasterEndpoint),
+    entryPoint: entryPointV07
   };
 }

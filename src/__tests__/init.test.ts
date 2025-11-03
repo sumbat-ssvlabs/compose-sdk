@@ -1,6 +1,6 @@
 import { rollupA, rollupB } from '@/config/chains';
 import { createComposeConfig } from '@/config/create';
-import { rollupsAccountAbstractionContracts } from '@/config/deafults';
+import { rollupsAccountAbstractionContracts } from '@/config/defaults';
 import type { ComposeRpcSchema } from '@/types/compose';
 import { createConfig, http } from '@wagmi/core';
 import { createPublicClient, rpcSchema } from 'viem';
