@@ -6,7 +6,9 @@ import { AbiParameterToPrimitiveType } from 'abitype';
 import { AbiType } from 'abitype';
 import { AbiTypeToPrimitiveType } from 'abitype';
 import { AccessList } from 'viem';
+import { Account } from 'viem';
 import { Address } from 'viem';
+import { Chain } from 'viem';
 import { ChainContract } from 'viem';
 import { ChainFees } from 'viem';
 import { ChainSerializers } from 'viem';
@@ -28,8 +30,10 @@ import { PrepareUserOperationReturnType } from 'viem/account-abstraction';
 import { PublicClient } from 'viem';
 import { serializeTransactionOpStack } from 'viem/chains';
 import { SignedAuthorizationList } from 'viem';
+import { TransactionReceipt } from 'viem';
 import { TransactionSerializable } from 'viem';
 import { TransactionType } from 'viem';
+import { Transport } from 'viem';
 import { Withdrawal } from 'viem';
 
 export declare type AbiEncoder<T extends AbiFunction[]> = {
@@ -416,7 +420,7 @@ declare type Call = {
 declare type ComposeConfigArgs<TConfig extends Config> = {
     wagmi: TConfig;
     getPaymasterEndpoint?: (args: PaymasterEndpointArgs<TConfig>) => string;
-    accountAbstractionContracts?: Record<TConfig['chains'][number]['id'], AccountAbstractionContracts>;
+    accountAbstractionContracts: Partial<Record<TConfig['chains'][number]['id'], AccountAbstractionContracts>>;
 };
 
 export declare type ComposeConfigReturnType<TConfig extends Config = Config> = {
@@ -444,11 +448,74 @@ export declare const composeRollupsContracts: {
     readonly bridge: "0x1388C9619aCCcd1dfff0234626EDDA61413Be74e";
 };
 
+declare type ComposeRpcSchema = [
+    {
+    Method: 'eth_sendXTransaction';
+    Parameters: [string];
+    ReturnType: null;
+},
+    {
+    Method: 'compose_buildSignedUserOpsTx';
+    Parameters: [ReturnType<typeof toRpcUserOpCanonical>[], {
+        chainId: number;
+    }];
+    ReturnType: ComposedSignedUserOpsTxReturnType;
+}
+];
+
+export declare const composeUserOps: (operations: ComposeUserOpsParams, options?: ComposeUserOpsOptions) => Promise<{
+    signedOps: {
+        sender: `0x${string}`;
+        nonce: `0x${string}`;
+        initCode: `0x${string}`;
+        factory: `0x${string}` | undefined;
+        factoryData: `0x${string}` | undefined;
+        callData: `0x${string}`;
+        callGasLimit: `0x${string}`;
+        verificationGasLimit: `0x${string}`;
+        preVerificationGas: `0x${string}`;
+        maxFeePerGas: `0x${string}`;
+        maxPriorityFeePerGas: `0x${string}`;
+        paymaster: true | `0x${string}` | {
+            getPaymasterData?: PaymasterActions["getPaymasterData"] | undefined;
+            getPaymasterStubData?: PaymasterActions["getPaymasterStubData"] | undefined;
+        } | ({
+            getPaymasterData?: PaymasterActions["getPaymasterData"] | undefined;
+            getPaymasterStubData?: PaymasterActions["getPaymasterStubData"] | undefined;
+        } & `0x${string}`) | undefined;
+        paymasterData: `0x${string}` | undefined;
+        paymasterVerificationGasLimit: `0x${string}`;
+        paymasterPostOpGasLimit: `0x${string}`;
+        signature: `0x${string}`;
+    }[];
+    builds: ComposedSignedUserOpsTxReturnType[];
+    payload: `0x${string}`;
+    explorerUrls: string[];
+    send: () => Promise<{
+        hashes: `0x${string}`[];
+        wait: () => Promise<TransactionReceipt[]>;
+    }>;
+}>;
+
+declare type ComposeUserOpsOptions = {
+    onSigned?: (signedOps: ReturnType<typeof toRpcUserOpCanonical>[]) => void;
+    onComposed?: (builds: ComposedSignedUserOpsTxReturnType[], explorerUrls: string[]) => void;
+    onPayloadEncoded?: (payload: Hex) => void;
+};
+
+declare type ComposeUserOpsParams = {
+    account: CreateKernelAccountReturnType<'0.7'>;
+    publicClient: PublicClient<Transport, Chain, Account, ComposeRpcSchema>;
+    userOp: CreateUserOPReturnType;
+}[];
+
 export declare const createAbiEncoder: <T extends Abi = Abi>(abi: T) => AbiEncoder<ExtractAbiFunctions<T, "nonpayable" | "payable">[]>;
 
 export declare function createComposeConfig<TConfig extends Config>(props: ComposeConfigArgs<TConfig>): ComposeConfigReturnType<TConfig>;
 
-export declare const createUserOp: (config: ComposeConfigReturnType, account: CreateKernelAccountReturnType<"0.7">, calls: Call[]) => Promise<{
+export declare type CreateUserOPReturnType = Awaited<ReturnType<typeof createUserOps>>;
+
+export declare const createUserOps: (config: ComposeConfigReturnType, account: CreateKernelAccountReturnType<"0.7">, calls: Call[]) => Promise<{
     account: CreateKernelAccountReturnType<"0.7">;
     chainId: number;
     callData: `0x${string}`;
