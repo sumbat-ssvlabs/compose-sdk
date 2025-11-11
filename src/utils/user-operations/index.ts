@@ -1,6 +1,7 @@
 import { getPaymasterDataForChain } from '@/api/paymaster';
 import type { ComposeConfigReturnType } from '@/config/create';
-import type { ComposedSignedUserOpsTxReturnType, toRpcUserOpCanonical } from '@/main';
+import type { ComposedSignedUserOpsTxReturnType } from '@/main';
+import { encodeXtMessage, toRpcUserOpCanonical } from '@/main';
 import type { ComposeRpcSchema } from '@/types/compose';
 import { prepareAndSignUserOperations } from '@zerodev/multi-chain-ecdsa-validator';
 import type { CreateKernelAccountReturnType } from '@zerodev/sdk';
@@ -16,7 +17,7 @@ const PRE_VERIFICATION_GAS = 90_000n;
 
 const withMargin = (value: bigint, marginPct = 25n) => value + (value * marginPct) / 100n;
 
-type Call = {
+export type UserOPCall = {
   to: Address;
   value: bigint;
   data: Hex;
@@ -25,7 +26,7 @@ type Call = {
 export const createUserOps = async (
   config: ComposeConfigReturnType,
   account: CreateKernelAccountReturnType<'0.7'>,
-  calls: Call[]
+  calls: UserOPCall[]
 ) => {
   const chainId = account.client.chain!.id;
   const publicClient = config.getPublicClient(chainId);
@@ -96,7 +97,7 @@ export const createUserOps = async (
     preVerificationGas: PRE_VERIFICATION_GAS,
     maxFeePerGas: gasEstimate.maxFeePerGas!,
     maxPriorityFeePerGas: gasEstimate.maxPriorityFeePerGas!,
-    paymaster
+    ...(paymaster ? { paymaster } : {})
   };
 };
 
@@ -118,52 +119,49 @@ export const composeUserOps = async (operations: ComposeUserOpsParams, options: 
       operations.map((operation) => operation.publicClient as Client<Transport, Chain, SmartAccount>),
       operations.map((operation) => operation.userOp)
     )
-  )/* .map(toRpcUserOpCanonical); */
-  return;
+  ).map(toRpcUserOpCanonical);
+
   options.onSigned?.(signedOps);
 
   const builds = await Promise.all(
-    operations.map((operation, index) =>
+    operations.map((operation, i) =>
       operation.publicClient.request({
         method: 'compose_buildSignedUserOpsTx',
-        params: [[signedOps[index]], { chainId: operation.publicClient.chain.id }]
+        params: [[signedOps[i]], { chainId: operation.publicClient.chain!.id }]
       })
     )
   );
 
-  const explorerUrls = operations.map((operation, index) =>
-    new URL(`tx/${builds[index].hash}`, operation.publicClient.chain.blockExplorers?.default?.url).toString()
+  const explorerUrls = builds.map((build, i) =>
+    new URL(`tx/${build.hash}`, operations[i].publicClient.chain!.blockExplorers?.default?.url).toString()
   );
 
   options.onComposed?.(builds, explorerUrls);
 
-  // const payload = encodeXtMessage({
-  //   senderId: 'client',
-  //   entries: builds.map((build) => ({ chainId: build.chainId, rawTx: build.raw as `0x${string}` }))
-  // });
+  const payload = encodeXtMessage({
+    senderId: 'client',
+    entries: builds.map((build, i) => ({
+      chainId: operations[i].publicClient.chain!.id,
+      rawTx: build.raw as `0x${string}`
+    }))
+  });
 
   return {
-    signedOps,
+    payload,
     builds,
-    explorerUrls
-    // payload,
-    // send: async () =>
-    //   operations[0].publicClient
-    //     .request({
-    //       method: 'eth_sendXTransaction',
-    //       params: [payload]
-    //     })
-    //     .then(() => {
-    //       const hashes = builds.map((build) => build.hash);
-    //       return {
-    //         hashes,
-    //         wait: () =>
-    //           Promise.all(
-    //             hashes.map((hash, index) => {
-    //               return operations[index].publicClient.waitForTransactionReceipt({ hash });
-    //             })
-    //           )
-    //       };
-    //     })
+    explorerUrls,
+    send: () =>
+      operations[0].publicClient
+        .request({
+          method: 'eth_sendXTransaction',
+          params: [payload]
+        })
+        .then(() => ({
+          hashes: builds.map((build) => build.hash),
+          wait: () =>
+            Promise.all(
+              builds.map((build, i) => operations[i].publicClient.waitForTransactionReceipt({ hash: build.hash }))
+            )
+        }))
   };
 };

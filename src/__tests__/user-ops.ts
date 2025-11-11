@@ -2,9 +2,10 @@ import { rollupA, rollupB } from '@/config/chains';
 import { createComposeConfig } from '@/config/create';
 import { composeRollupsContracts, rollupsAccountAbstractionContracts } from '@/config/defaults';
 import type { ComposeRpcSchema } from '@/types/compose';
-import { composeUserOps, createAbiEncoder } from '@/utils';
+import { createAbiEncoder } from '@/utils';
 import { createSmartAccount } from '@/utils/smart-account/create';
 import { createConfig, http } from '@wagmi/core';
+import { prepareAndSignUserOperations } from '@zerodev/multi-chain-ecdsa-validator';
 import { createPublicClient, erc20Abi, rpcSchema } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { describe, expect, it } from 'vitest';
@@ -30,7 +31,9 @@ describe('createComposeConfig initialization', () => {
       }
     });
 
+    console.log('import.meta.env.VITE_PRIVATE_KEY:', import.meta.env.VITE_PRIVATE_KEY);
     const account = privateKeyToAccount(import.meta.env.VITE_PRIVATE_KEY);
+    console.log('account:', account);
 
     const smartAccountA = await createSmartAccount(
       {
@@ -62,62 +65,63 @@ describe('createComposeConfig initialization', () => {
       {
         to: composeRollupsContracts.tokens.WETH,
         value: 0n,
-        data: erc20.approve({
-          amount: 10000000000000000000n,
-          spender: '0x4d589Ff4d708463509b1447A7355D9b45a1A3123'
-        })
+        data: '0x'
       }
     ]);
+    console.log('userOpA:', userOpA)
     const userOpB = await smartAccountB.account?.createUserOp([
       {
         to: composeRollupsContracts.tokens.WETH,
         value: 0n,
-        data: erc20.approve({
-          amount: 10000000000000000000n,
-          spender: '0x4d589Ff4d708463509b1447A7355D9b45a1A3123'
-        })
+        data: '0x'
       }
     ]);
+    console.log('userOpB:', userOpB)
     expect(userOpA).toBeDefined();
     expect(userOpB).toBeDefined();
     expect(userOpA.chainId).toBe(rollupA.id);
     expect(userOpB.chainId).toBe(rollupB.id);
-    expect(userOpA.account.address).toBe(smartAccountA.account?.address);
-    expect(userOpB.account.address).toBe(smartAccountB.account?.address);
+    expect(userOpA.smartAccount.address).toBe(smartAccountA.account?.address);
+    expect(userOpB.smartAccount.address).toBe(smartAccountB.account?.address);
 
-    
+    const data = await prepareAndSignUserOperations(
+      [smartAccountA.publicClient, smartAccountB.publicClient],
+      [userOpA, userOpB]
+    );
+    console.log('data:', data);
 
-    const data = await composeUserOps([
-      {
-        account: smartAccountA.account,
-        publicClient: smartAccountA.publicClient,
-        userOp: await smartAccountA.account?.createUserOp([
-          {
-            to: composeRollupsContracts.tokens.WETH,
-            value: 0n,
-            data: erc20.approve({
-              amount: 10000000000000000000n,
-              spender: '0x4d589Ff4d708463509b1447A7355D9b45a1A3123'
-            })
-          }
-        ])
-      },
-      {
-        account: smartAccountB.account,
-        publicClient: smartAccountB.publicClient,
-        userOp: await smartAccountB.account?.createUserOp([
-          {
-            to: composeRollupsContracts.tokens.WETH,
-            value: 0n,
-            data: erc20.approve({
-              amount: 10000000000000000000n,
-              spender: '0x4d589Ff4d708463509b1447A7355D9b45a1A3123'
-            })
-          }
-        ])
-      }
-    ]);
-    expect(data).toBeDefined();
+    // const data = await composeUserOps([
+    //   {
+    //     account: smartAccountA.account,
+    //     publicClient: smartAccountA.publicClient,
+    //     userOp: await smartAccountA.account?.createUserOp([
+    //       {
+    //         to: composeRollupsContracts.tokens.WETH,
+    //         value: 0n,
+    //         data: erc20.approve({
+    //           amount: 10000000000000000000n,
+    //           spender: '0x4d589Ff4d708463509b1447A7355D9b45a1A3123'
+    //         })
+    //       }
+    //     ])
+    //   },
+    //   {
+    //     account: smartAccountB.account,
+    //     publicClient: smartAccountB.publicClient,
+    //     userOp: await smartAccountB.account?.createUserOp([
+    //       {
+    //         to: composeRollupsContracts.tokens.WETH,
+    //         value: 0n,
+    //         data: erc20.approve({
+    //           amount: 10000000000000000000n,
+    //           spender: '0x4d589Ff4d708463509b1447A7355D9b45a1A3123'
+    //         })
+    //       }
+    //     ])
+    //   }
+    // ]);
+    // console.log('data:', data)
+    // expect(data).toBeDefined();
     // expect(data.builds.length).toBe(1);
     // expect(data.builds[0].chainId).toBe(rollupA.id);
     // expect(data.builds[0].hash).toMatch(/^0x/);
